@@ -1,18 +1,163 @@
-# Irisphera Integration Guide (3rd-Party Marketplace)
+# Irisphera Integration Guide for Third-Party Providers
 
-This guide explains how a marketplace partner integrates Irisphera services. It covers the mandatory core setup plus feature-specific integration for Virtual Personal Shopper (recommendations), Virtual Try On, and 360/3D preview.
+This guide helps a third-party provider set up Irisphera for a merchant storefront.
 
-## 1. Mandatory Core Integration
+Start with merchant setup, product data, and visitor setup. Then choose one shopper option based on who owns the storefront UI.
 
-### 1.1 API Key and Visitor Access Tokens
+## Guide Map
 
-- Irisphera will provide your organization with an API key.
-- Keep the API key server-side only. Do not expose it in the browser.
-- For each visitor session, your backend must request a short-lived Irisphera access token and pass it to the browser.
+1. [Merchant Setup and Common Requirements](#1-merchant-setup-and-common-requirements)
+2. [Visitor Setup for Shopper Flows](#2-visitor-setup-for-shopper-flows)
+3. [Option A: Build Your Own Shopper UI with Direct API](#3-option-a-build-your-own-shopper-ui-with-direct-api)
+4. [Option B: Embed Irisphera UI with SDK/Iframe](#4-option-b-embed-irisphera-ui-with-sdkiframe)
+5. [Troubleshooting and Reference](#5-troubleshooting-and-reference)
 
-**Create a visitor access token (server-side)**
+## 1. Merchant Setup and Common Requirements
 
-Request a token with the API key header `irisphera-api-key` and a stable `endUserId` (your visitor/user identifier).
+Complete this setup before you build shopper-facing features.
+
+The API key, merchant VTO demo, catalog feed, and canonical product IDs are common to both shopper options.
+
+### API Key Setup
+
+Irisphera issues your organization an API key.
+
+Store the API key server-side only. Never expose it in browser, iframe, SDK, shopper, or public frontend code.
+
+Use the API key only from trusted server code, such as your backend token exchange, merchant demo calls, and protected feed endpoint.
+
+### Merchant VTO Demo and Validation
+
+Use `POST /merchant/v1/vto2d` when your backend needs a merchant demo, smoke test, or quick validation of try-on generation.
+
+This endpoint uses API-key auth only. It does not require `endUserId` or a visitor `accessToken`.
+
+It is for merchant demo and validation, not the shopper production VTO flow.
+
+Send multipart form data with required `featuredImage` and `userPhoto` files. Add optional `description` text when it helps identify the garment.
+
+The response includes `generatedImage`, the generated try-on image.
+
+```bash
+curl -X POST \
+  "https://api.irisphera.com/merchant/v1/vto2d" \
+  -H "irisphera-api-key: <YOUR_API_KEY>" \
+  -F "featuredImage=@product.webp" \
+  -F "userPhoto=@shopper.webp" \
+  -F "description=linen shirt"
+```
+
+### Catalog Ingestion
+
+Catalog ingestion must finish before shopper features rely on products.
+
+Expose an HTTPS feed endpoint that Irisphera can fetch on a schedule. Protect that endpoint with API key authentication.
+
+Irisphera calls your feed endpoint with `irisphera-api-key: <YOUR_API_KEY>`. Your server validates that header before returning the feed.
+
+Example feed request from Irisphera to your server:
+
+```http
+GET https://partner.example.com/api/irisphera/feed
+irisphera-api-key: <YOUR_API_KEY>
+```
+
+Return a JSON object with a `products` array. Unknown product fields are not part of the contract.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `skuCustomId` | Yes | Canonical product-color ID. |
+| `title` | Yes | Product title. Add color or variant text when needed. |
+| `description` | No | Plain product description. |
+| `gender` | No | `women`, `men`, or `unisex`. |
+| `product_featured_image` | Conditional | Primary display image. Maps to `featuredImage`. |
+| `product_front_image` | Conditional | Front-facing product image. |
+| `product_back_image` | No | Back-facing product image. |
+| `product_images` | Conditional | Extra product image URLs. |
+| `product_page_url` | No | Product page URL. Include variant params when useful. |
+| `date_added` | No | ISO 8601 date for seasonality. |
+| `product_price` | No | Regular price. |
+| `product_special_price` | No | Sale price. |
+
+At least one image is required. Irisphera resolves images in this order: `product_featured_image`, then `product_front_image`, then the first value in `product_images`.
+
+Products without an image are skipped during import.
+
+```json
+{
+  "products": [
+    {
+      "skuCustomId": "12345678901",
+      "title": "Classic Sweater Red",
+      "description": "Merino wool sweater with ribbed cuffs",
+      "gender": "women",
+      "product_front_image": "https://cdn.example.com/sweater-red-front.jpg",
+      "product_back_image": "https://cdn.example.com/sweater-red-back.jpg",
+      "product_images": [
+        "https://cdn.example.com/sweater-red-front.jpg",
+        "https://cdn.example.com/sweater-red-detail.jpg"
+      ],
+      "product_featured_image": "https://cdn.example.com/sweater-red-front.jpg",
+      "product_page_url": "https://shop.example.com/products/classic-sweater?variant=12345678901",
+      "date_added": "2026-02-01T10:24:00Z"
+    }
+  ]
+}
+```
+
+### skuCustomId Rules
+
+`skuCustomId` represents one product-color variation.
+
+All sizes of the same color share the same `skuCustomId`. Different colors must use different `skuCustomId` values.
+
+If your catalog has size-level SKUs, map each size variant to one canonical color-level `skuCustomId`.
+
+Use this same value in the product feed, Direct API calls, SDK helpers, purchase reporting, event reporting, recommendations, VTO, and 3D preview.
+
+```js
+function getSkuCustomId(lineItem, variantToCanonicalMap) {
+  if (variantToCanonicalMap && lineItem.variantId) {
+    const canonical = variantToCanonicalMap[lineItem.variantId];
+    if (canonical) return canonical;
+  }
+
+  return lineItem.productId || lineItem.sku || lineItem.variantId;
+}
+```
+
+## 2. Visitor Setup for Shopper Flows
+
+Use this section when you are ready to make shopper API calls or load the SDK/iframe.
+
+Shopper requests use visitor bearer tokens. They do not use your merchant API key.
+
+### Stable endUserId
+
+Use a stable `endUserId` for each visitor across browsing, cart, purchase, and event reporting.
+
+The same visitor must receive the same `endUserId` when they browse, add to cart, return later, and complete checkout.
+
+For logged-in shoppers, use your internal user ID or a stable hash of it.
+
+For anonymous shoppers, create a stable first-party identifier and store it in a first-party cookie.
+
+For guest checkout, reconstruct the same identifier from the checkout context where possible.
+
+```js
+const crypto = require('crypto');
+
+function generateEndUserId(clientIp, userAgent) {
+  return crypto
+    .createHash('md5')
+    .update(`${clientIp || ''}${userAgent || ''}`)
+    .digest('hex');
+}
+```
+
+### Visitor Access Tokens
+
+Your backend exchanges the visitor `endUserId` for a visitor `accessToken` through `/merchant/v1/access-token`.
 
 ```bash
 curl -X GET \
@@ -28,274 +173,27 @@ Example response:
 }
 ```
 
-Some deployments may include additional fields (for example token TTL or organization metadata), but your integration should treat `accessToken` as the required contract.
+Pass only the visitor `accessToken` to frontend code.
 
-### 1.2 endUserId: Why Consistency Matters
+Browser, iframe, SDK, and shopper API calls use `Authorization: Bearer <ACCESS_TOKEN>`.
 
-The `endUserId` parameter is critical for Irisphera analytics and reporting. It uniquely identifies a visitor across multiple sessions and devices.
+### Auth Rules for Shopper Requests
 
-**Why this matters:**
+Never send both `irisphera-api-key` and `Authorization: Bearer ...` on the same Irisphera API request.
 
-1. **Cross-session tracking**: When a visitor returns (even days later), using the same `endUserId` lets Irisphera correlate their profile, recommendations, and purchase history.
-2. **Attribution reporting**: Irisphera provides reports showing which recommendations led to purchases. Accurate attribution requires the same `endUserId` to link browsing sessions to checkout events.
-3. **Model improvement**: Consistent user identification helps Irisphera's recommendation engine learn from real purchase outcomes.
+Irisphera API rejects that combination.
 
-**Best practices for generating endUserId:**
+Use the API key only on your server for merchant endpoints and token exchange.
 
-| Scenario | Recommended approach |
-| --- | --- |
-| Logged-in user | Use your internal user ID or a stable hash of it (e.g., `md5(user_id + salt)`) |
-| Anonymous visitor | Generate a stable fingerprint from `clientIp + userAgent` and store it in a first-party cookie |
-| Guest checkout | Hash the combination of `clientIp + userAgent` at order time to match the browsing session |
+Use the visitor bearer token for shopper endpoints, SDK calls, iframe calls, and browser code.
 
-**Example: anonymous visitor fingerprint**
+### Purchase and Event Reporting
 
-```js
-// Server-side (Node.js example)
-const crypto = require('crypto');
+Send purchase data from your backend for every completed order, even if the shopper did not use Irisphera features.
 
-function generateEndUserId(clientIp, userAgent) {
-  return crypto
-    .createHash('md5')
-    .update(`${clientIp || ''}${userAgent || ''}`)
-    .digest('hex');
-}
-```
+This reporting supports attribution, model training, and ROI measurement.
 
-The key rule: **the same visitor must always receive the same `endUserId`**, whether they are browsing, adding to cart, or completing a purchase.
-
-### 1.3 SDK Initialization (recommended pattern)
-
-The Irisphera SDK is exposed as `window.irsSdkV2` and manages iframe messaging, profile persistence, and recommendations caching. Your frontend must set the access token on every visitor session.
-
-**Important (production origin):**
-
-Set `window.IRISPHERA_TARGET_ORIGIN` to the Irisphera iframe origin **before** loading the SDK script. If omitted, the SDK falls back to `localhost:3000` for iframe origin resolution.
-
-```html
-<script>
-  // Set this to the Irisphera iframe app origin provided to your integration.
-  window.IRISPHERA_TARGET_ORIGIN = 'https://<IRISPHERA_IFRAME_ORIGIN>';
-</script>
-<script src="<IRISPHERA_SDK_URL>"></script>
-```
-
-**Frontend init sequence**
-
-```js
-async function getAccessTokenFromYourBackend() {
-  const res = await fetch('/api/irisphera/token', { credentials: 'include' });
-  const data = await res.json();
-  return data.accessToken;
-}
-
-async function initIrisphera() {
-  const sdk = await window.irsSdkV2.whenReady();
-  const token = await getAccessTokenFromYourBackend();
-
-  // Server already validated the token.
-  await sdk.setAccessToken(token, { skipValidation: true });
-
-  // Optional: enable automatic refresh when iframe requests a new token.
-  sdk.registerTokenFetcher(async () => {
-    const res = await fetch('/api/irisphera/token', { credentials: 'include' });
-    const data = await res.json();
-    return data.accessToken;
-  });
-
-  // Optional: if multiple initializers can run concurrently,
-  // this waits until token is definitely available in SDK state.
-  await sdk.whenTokenReady();
-}
-
-initIrisphera();
-```
-
-**Key rules**
-
-- Always create a new access token per visitor session.
-- Use `setAccessToken(..., { skipValidation: true })` when your server already validated the token.
-- Register a token fetcher to handle iframe refresh requests when tokens expire.
-- The SDK initializes asynchronously; call `whenReady()` before invoking iframe/helper APIs.
-- If no token fetcher is registered, token refresh requests from iframe contexts can fail when tokens expire.
-
-### 1.3.1 SDK lifecycle events (optional but recommended)
-
-The SDK dispatches browser events that can be used for observability and race-free orchestration:
-
-- `irsSdkV2:ready` — SDK initialized and ready.
-- `irsSdkV2:token` — access token stored/restored/refreshed.
-- `irsSdkV2:recovery` — SDK storage reset/recovery occurred.
-- `irispheraDataReady` — recommendation/profile-derived session data is ready (silhouette, palette, sizing, recommendations). This is emitted in the profile/detection completion flow; do not assume every standalone `fetchRecommendations()` call will emit it.
-
-```js
-window.addEventListener('irsSdkV2:ready', (e) => {
-  console.log('Irisphera SDK ready', e.detail);
-});
-
-window.addEventListener('irsSdkV2:token', (e) => {
-  console.log('Irisphera token event', e.detail);
-});
-
-window.addEventListener('irsSdkV2:recovery', (e) => {
-  console.warn('Irisphera SDK recovery', e.detail);
-});
-```
-
-### 1.4 Marketplace Product Feed (Required)
-
-You must expose an **HTTPS GET endpoint** that returns your catalog in the structure below. Irisphera will call this URL on a schedule to ingest your products.
-
-**Feed endpoint requirements**
-
-- Provide a stable URL such as `https://partner.example.com/api/irisphera/feed`.
-- **Do not make this endpoint public.** Protect it with API key authentication.
-- Irisphera will call your endpoint using the same API key we provide to you. Your endpoint must validate the `irisphera-api-key` header and reject unauthorized requests.
-- Response format: JSON array of products.
-
-**Authentication flow:**
-
-1. Irisphera calls your feed endpoint with the header `irisphera-api-key: <YOUR_API_KEY>`
-2. Your server validates the API key matches the one we provided
-3. If valid, return the product feed; otherwise return `401 Unauthorized`
-
-**Example request from Irisphera to your endpoint:**
-
-```
-GET https://partner.example.com/api/irisphera/feed
-Headers:
-  irisphera-api-key: <YOUR_API_KEY>
-```
-
-#### Product DTO Schema
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `skuCustomId` | string | Yes | Unique per color variation (see section 1.5). |
-| `title` | string | Yes | Product title. Append color/variant info for uniqueness (e.g., "Classic Sweater - Red"). |
-| `description` | string | No | Product description (plain text). |
-| `gender` | string | No | One of: `women`, `men`, `unisex`. Recommended for better recommendations. |
-| `product_featured_image` | string (URL) | Yes* | Primary display image. Used for duplicate detection. *At least one image field is required. |
-| `product_front_image` | string (URL) | No | Front-facing product image URL (still-life). |
-| `product_back_image` | string (URL) | No | Back-facing product image URL (still-life). |
-| `product_images` | string[] | No | Array of all product image URLs. |
-| `product_page_url` | string (URL) | No | URL to the product page. Include variant param if applicable (e.g., `?variant=123`). |
-| `date_added` | string | No | ISO 8601 date (e.g., `2026-02-01`). Used for seasonality filtering. |
-| `product_price` | string | No | Regular price (e.g., `"99.00"`). |
-| `product_special_price` | string | No | Sale/promotional price. |
-
-**Image field priority:** The system requires at least one image. It resolves in this order: `product_featured_image` > `product_front_image` > first item of `product_images`. Products without any image are skipped during import.
-
-**Example feed response**
-
-```json
-[
-  {
-    "skuCustomId": "12345678901",
-    "title": "Classic Sweater - Red",
-    "description": "Merino wool sweater with ribbed cuffs",
-    "gender": "women",
-    "product_front_image": "https://cdn.example.com/img/sweater-red-front.jpg",
-    "product_back_image": "https://cdn.example.com/img/sweater-red-back.jpg",
-    "product_images": [
-      "https://cdn.example.com/img/sweater-red-front.jpg",
-      "https://cdn.example.com/img/sweater-red-back.jpg",
-      "https://cdn.example.com/img/sweater-red-detail.jpg"
-    ],
-    "product_featured_image": "https://cdn.example.com/img/sweater-red-front.jpg",
-    "product_page_url": "https://shop.example.com/products/classic-sweater?variant=12345678901",
-    "date_added": "2026-02-01T10:24:00Z"
-  },
-  {
-    "skuCustomId": "12345678902",
-    "title": "Classic Sweater - Blue",
-    "description": "Merino wool sweater with ribbed cuffs",
-    "gender": "women",
-    "product_front_image": "https://cdn.example.com/img/sweater-blue-front.jpg",
-    "product_back_image": "https://cdn.example.com/img/sweater-blue-back.jpg",
-    "product_images": [
-      "https://cdn.example.com/img/sweater-blue-front.jpg",
-      "https://cdn.example.com/img/sweater-blue-back.jpg"
-    ],
-    "product_featured_image": "https://cdn.example.com/img/sweater-blue-front.jpg",
-    "product_page_url": "https://shop.example.com/products/classic-sweater?variant=12345678902",
-    "date_added": "2026-02-01T10:24:00Z"
-  }
-]
-```
-
-### 1.5 skuCustomId Rules (Color-Level Uniqueness)
-
-- `skuCustomId` must represent **one unique color variation** of a product.
-- All sizes of the same color **share the same `skuCustomId`**.
-- Different colors **must use different `skuCustomId` values**.
-
-**Canonical variant concept:** If your catalog has size-level SKUs (e.g., variant IDs per size), you must create a mapping to a "canonical" color-level identifier. This canonical `skuCustomId` should be:
-- The first variant ID of each color group, OR
-- A stable product-color identifier you define (e.g., `PRODUCT_123-RED`)
-
-Use this canonical value everywhere Irisphera is called: product feed, purchase events, recommendations, VTO, and 3D preview.
-
-**skuCustomId resolution priority (for purchase events):**
-
-When processing order line items, resolve `skuCustomId` in this order:
-1. `product_id` (if available and represents color-level)
-2. `sku` (if color-level)
-3. `variant_id` (if you've mapped variants to canonical IDs)
-
-```js
-// Example: resolving skuCustomId from an order line item
-function getSkuCustomId(lineItem, variantToCanonicalMap) {
-  // If you have a mapping from size-level variants to canonical color-level IDs
-  if (variantToCanonicalMap && lineItem.variantId) {
-    const canonical = variantToCanonicalMap[lineItem.variantId];
-    if (canonical) return canonical;
-  }
-  // Fallback priority
-  return lineItem.productId || lineItem.sku || lineItem.variantId;
-}
-```
-
-### 1.6 Purchase Event Webhook (Mandatory)
-
-You **must** send purchase data to Irisphera for every completed order, regardless of whether the customer used Irisphera features. This is essential for:
-
-- Attribution reporting (did a recommendation lead to a sale?)
-- Model training (learning which products convert)
-- ROI measurement for your integration
-
-**Implementation pattern:**
-
-When an order is created in your system, your backend must:
-
-1. Reconstruct the `endUserId` for the purchasing visitor (same logic as section 1.2)
-2. Request a new access token for that `endUserId`
-3. Call the purchase endpoint with the list of purchased SKUs
-
-**Step 1: Generate endUserId from order context**
-
-Extract `clientIp` and `userAgent` from the order (most e-commerce platforms store this). Use the same hashing logic:
-
-```js
-// Server-side
-const crypto = require('crypto');
-
-function getEndUserIdFromOrder(order) {
-  const clientIp = order.clientDetails?.browserIp || order.clientIp || '';
-  const userAgent = order.clientDetails?.userAgent || order.userAgent || '';
-  return crypto.createHash('md5').update(`${clientIp}${userAgent}`).digest('hex');
-}
-```
-
-**Step 2: Get access token (server-side)**
-
-```bash
-curl -X GET \
-  "https://api.irisphera.com/merchant/v1/access-token?endUserId=<HASHED_END_USER_ID>" \
-  -H "irisphera-api-key: <YOUR_API_KEY>"
-```
-
-**Step 3: Send purchase data (server-side)**
+For each completed order, reconstruct the same `endUserId`, get a visitor access token, and send unit-level purchased SKUs.
 
 ```bash
 curl -X POST \
@@ -310,42 +208,9 @@ curl -X POST \
   }'
 ```
 
-**Purchase payload schema:**
+If quantity is greater than one, include one entry per purchased unit.
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `skuCustomIds` | array | Required. List of purchased items. |
-| `skuCustomIds[].skuCustomId` | string | Required. The canonical color-level SKU. |
-| `skuCustomIds[].price` | string | Recommended for revenue/ROI accuracy. Format: `"<amount> <CURRENCY>"` (e.g., `"99.00 EUR"`). |
-
-`price` is strongly recommended and should be sent whenever available. Some deployments may accept entries without `price`, but omitting it reduces downstream revenue attribution quality. If you use strict generated API clients in your backend stack, treat `price` as required for compatibility.
-
-**Handling quantity > 1:**
-
-If a line item has quantity greater than 1, include one entry per unit:
-
-```json
-{
-  "skuCustomIds": [
-    { "skuCustomId": "sweater-red", "price": "99.00 EUR" },
-    { "skuCustomId": "sweater-red", "price": "99.00 EUR" },
-    { "skuCustomId": "sweater-red", "price": "99.00 EUR" }
-  ]
-}
-```
-
-**Handling discounts:**
-
-Calculate the effective per-unit price after discounts:
-
-```js
-// If line item has total_discount that applies to all units
-const effectiveUnitPrice = unitPrice - (totalDiscount / quantity);
-```
-
-**Order cancellation:**
-
-If an order is cancelled, send a DELETE request to remove the purchase record:
+Send cancellation data when an order is canceled.
 
 ```bash
 curl -X DELETE \
@@ -359,131 +224,233 @@ curl -X DELETE \
   }'
 ```
 
-**Complete server-side example (Node.js):**
+Client-side event helpers are supplemental. They do not replace server-side purchase reporting.
+
+## 3. Option A: Build Your Own Shopper UI with Direct API
+
+Choose this option when your team owns the storefront UI, profile capture, recommendation rendering, and VTO rendering.
+
+Your backend stores the API key and creates visitor access tokens. Your product UI calls shopper APIs with bearer auth.
+
+### Direct API: Virtual Try On
+
+For the shopper flow, first check whether the product is ready for VTO.
+
+Use `GET /shopper/v1/stylist-preview/{skuCustomId}` with the visitor token.
+
+```bash
+curl -X GET \
+  "https://api.irisphera.com/shopper/v1/stylist-preview/{skuCustomId}" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+If the product is unavailable, hide or disable the VTO action and keep the normal product page flow.
+
+Generate the shopper result with `POST /shopper/v1/stylist-preview` as multipart form data.
+
+Send `skuCustomId` and the shopper photo as `targetImage`.
+
+```bash
+curl -X POST \
+  "https://api.irisphera.com/shopper/v1/stylist-preview" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -F "skuCustomId=12345678901" \
+  -F "targetImage=@shopper.webp"
+```
+
+Render the returned image in your own UI. If imagery is invalid, ask for a different shopper photo or fall back to your normal product page.
+
+### Direct API: Stylistic Recommendations
+
+Choose this option when the retailer owns profile capture, recommendation calls, and recommendation rendering.
+
+Call `POST /shopper/v1/recommendations` with a visitor access token.
+
+Send the shopper profile as `encodedProfileData`. Use `filters` and `collectionIds` when you want a narrowed result set.
+
+```bash
+curl -X POST \
+  "https://api.irisphera.com/shopper/v1/recommendations" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "encodedProfileData": "<ENCODED_PROFILE_DATA>",
+    "offset": 0,
+    "limit": 12,
+    "filters": {},
+    "collectionIds": ["summer-2026"]
+  }'
+```
+
+Returned recommendations can include product IDs, recommended size data, silhouette, palette, and general sizing data.
+
+Render each recommendation by matching its `skuCustomId` to your catalog product, image, price, product URL, and available sizes.
+
+## 4. Option B: Embed Irisphera UI with SDK/Iframe
+
+Choose this option when you want Irisphera's embedded frontend experience inside your site.
+
+Your backend still creates visitor access tokens. The browser passes only those tokens to the SDK.
+
+### SDK/Iframe Setup
+
+Load the production SDK from `https://app.irisphera.com/v2.0.0/irispheraSdk.js`.
+
+```html
+<script src="https://app.irisphera.com/v2.0.0/irispheraSdk.js"></script>
+```
+
+The SDK global is `window.irsSdkV2`. The default iframe origin is `https://app.irisphera.com`.
+
+Set `window.IRISPHERA_TARGET_ORIGIN` before loading the script only when Irisphera gives you a different iframe app origin.
+
+```html
+<script>
+  window.IRISPHERA_TARGET_ORIGIN = 'https://app.irisphera.com';
+</script>
+<script src="https://app.irisphera.com/v2.0.0/irispheraSdk.js"></script>
+```
+
+Initialize the SDK after your backend returns a visitor token.
 
 ```js
-const crypto = require('crypto');
+async function initIrispheraSdk() {
+  const sdk = await window.irsSdkV2.whenReady();
+  const token = await getAccessTokenFromYourBackend();
 
-async function handleOrderCreated(order) {
-  // 1. Reconstruct endUserId
-  const clientIp = order.clientDetails?.browserIp || '';
-  const userAgent = order.clientDetails?.userAgent || '';
-  const endUserId = crypto.createHash('md5').update(`${clientIp}${userAgent}`).digest('hex');
+  await sdk.setAccessToken(token, { skipValidation: true });
 
-  // 2. Get access token
-  const tokenRes = await fetch(
-    `https://api.irisphera.com/merchant/v1/access-token?endUserId=${endUserId}`,
-    { headers: { 'irisphera-api-key': process.env.IRISPHERA_API_KEY } }
-  );
-  const { accessToken } = await tokenRes.json();
-
-  // 3. Build purchase payload
-  const currency = order.currency?.toUpperCase() || '';
-  const skuCustomIds = order.lineItems.flatMap(item => {
-    const skuCustomId = item.productId || item.sku || item.variantId;
-    if (!skuCustomId) return [];
-
-    const unitPrice = parseFloat(item.price) || 0;
-    const totalDiscount = parseFloat(item.totalDiscount) || 0;
-    const quantity = item.quantity || 1;
-    const effectivePrice = unitPrice - (totalDiscount / quantity);
-    const priceStr = currency ? `${effectivePrice.toFixed(2)} ${currency}` : effectivePrice.toFixed(2);
-
-    // One entry per unit purchased
-    return Array(quantity).fill({ skuCustomId: String(skuCustomId), price: priceStr });
+  sdk.registerTokenFetcher(async () => {
+    return getAccessTokenFromYourBackend();
   });
 
-  if (skuCustomIds.length === 0) return;
-
-  // 4. Send to Irisphera
-  await fetch('https://api.irisphera.com/shopper/v1/data/purchase', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ skuCustomIds })
-  });
+  await sdk.whenTokenReady();
 }
 ```
 
-## 2. Virtual Personal Shopper + Recommendations
+Do not pass `irisphera-api-key` to SDK, iframe, browser code, or shopper requests.
 
-This feature captures a user profile and returns personalized recommendations. The SDK handles the iframe flow and caches results.
+### SDK/Iframe: Virtual Try On
 
-### 2.1 Core SDK Functions
+On product pages, render the sizing widget first. It owns callbacks that can open VTO or 3D preview.
 
-- `showIrispheraIframe(document, divId, onComplete)` - Main profile capture iframe
-- `showIrispheraIframeCta(document, divId, language, onCreateProfile, onViewRecommendations)` - CTA banner for users without profile
-- `showIrispheraIframeBanner(document, divId, language, onEditProfile)` - Banner for users with existing profile
-- `fetchRecommendations(options)` - Fetches recommendations from server
-- `isUserProfileSavedToCookies()` - Returns `true` if user has completed profile
-- `Results.sessionRecommendations` - Array of `{ skuCustomId, size }` after `fetchRecommendations()`
-- `Results.sessionSilhouette` - User's body type classification
-- `Results.sessionPalette` - User's color palette classification
+```js
+window.irsSdkV2.showIrispheraIframeSizing(
+  document,
+  'irsSizingDiv',
+  null,
+  recommendedSize,
+  skuCustomId,
+  onEditProfile,
+  onViewRecommendations,
+  onVto,
+  onTdPreview
+);
+```
 
-### 2.2 Typical Flow (CTA + modal)
+When the sizing widget calls `onVto`, open the VTO iframe with the canonical `skuCustomId`.
 
-**Check if user has profile before deciding which banner to show:**
+```js
+function onVto() {
+  openModal();
+  window.irsSdkV2.showIrispheraIframeVto(document, 'irsIframeDiv', null, skuCustomId);
+}
+```
+
+When the sizing widget calls `onTdPreview`, treat 3D preview as supporting UI. Open it only when a `glbUrl` is present.
+
+```js
+function onTdPreview(glbUrl) {
+  if (!glbUrl) return;
+  openModal();
+  window.irsSdkV2.showIrispheraIframeTdPreview(document, 'irsIframeDiv', null, skuCustomId, glbUrl);
+}
+```
+
+### SDK/Iframe: Stylistic Recommendations
+
+Choose this option when Irisphera owns profile capture and the embedded recommendation flow.
+
+Check whether the SDK already has a saved profile. Then show the right iframe entry point for that visitor.
+
+Use `showIrispheraIframeCta` when the visitor needs to create a profile or open recommendations from a CTA.
+
+Use `showIrispheraIframeBanner` when the visitor already has a profile and should see an edit or recommendation banner.
+
+Open `showIrispheraIframe` in a modal for profile capture or profile edits.
+
+When detection finishes, the SDK saves the profile, calls `fetchRecommendations`, persists state, and emits profile data readiness.
 
 ```js
 if (window.irsSdkV2.isUserProfileSavedToCookies()) {
-  // User has profile - show recommendations banner
   window.irsSdkV2.showIrispheraIframeBanner(
     document,
     'irsBannerDiv',
     null,
     () => {
-      // Edit profile callback
       openModal();
       window.irsSdkV2.showIrispheraIframe(document, 'irsIframeDiv', () => {
         closeModal();
-        window.location.reload();
+        renderRecommendations();
       });
     }
   );
 } else {
-  // User has no profile - show CTA banner
   window.irsSdkV2.showIrispheraIframeCta(
     document,
-    'irsBannerDiv',
+    'irsCtaDiv',
     null,
     () => {
-      // Create profile callback
       openModal();
-      window.irsSdkV2.showIrispheraIframe(document, 'irsIframeDiv', async () => {
-        await window.irsSdkV2.fetchRecommendations();
+      window.irsSdkV2.showIrispheraIframe(document, 'irsIframeDiv', () => {
         closeModal();
         renderRecommendations();
       });
     },
-    () => {
-      // View recommendations callback (profile exists from another tab/session)
-      renderRecommendations();
-    }
+    renderRecommendations
   );
 }
 ```
 
-### 2.3 Accessing Recommendation Results
+Call `fetchRecommendations({ filters, collectionIds })` when you need recommendations for the saved profile and current catalog filters.
+
+The SDK sends saved profile data as `encodedProfileData` and stores the response for display.
+
+It reuses an in-flight request with the same filter and collection inputs instead of starting another request.
+
+The recommendation cache is bound to the saved profile and request filters. If the profile changes, the SDK invalidates cached recommendations.
+
+Read outputs from `Results.sessionRecommendations`, `Results.sessionSilhouette`, and `Results.sessionPalette`.
 
 ```js
-const recs = window.irsSdkV2.Results.sessionRecommendations; // [{ skuCustomId, size }]
+await window.irsSdkV2.fetchRecommendations({
+  filters: selectedFilters,
+  collectionIds: selectedCollectionIds,
+});
+
+const recommendations = window.irsSdkV2.Results.sessionRecommendations;
+const silhouette = window.irsSdkV2.Results.sessionSilhouette;
+const palette = window.irsSdkV2.Results.sessionPalette;
 ```
 
-Use the `skuCustomId` to look up catalog products from your marketplace feed, and optionally surface the recommended size.
+Render recommendations in your storefront using `skuCustomId`.
 
-**Caching behavior to be aware of:**
+```js
+function renderRecommendations() {
+  const recommendations = window.irsSdkV2.Results.sessionRecommendations || [];
 
-- SDK recommendation cache is profile-bound and filter-bound.
-- Cached recommendations expire after ~10 minutes.
-- If profile data changes, cached recommendations are invalidated automatically.
+  return recommendations.map((recommendation) => {
+    const product = catalogBySkuCustomId[recommendation.skuCustomId];
 
-If you need fresh recommendations immediately after profile or filter changes, call `fetchRecommendations()` again.
+    return {
+      product,
+      recommendedSize: recommendation.size || null,
+    };
+  });
+}
+```
 
-### 2.4 Tracking User Events
-
-Use the SDK host event helpers to send engagement data:
+Use host event helpers only as supplemental client analytics for browsing and cart signals.
 
 ```js
 window.irsSdkV2.HostEventsHandler.onProductView(skuCustomId);
@@ -492,293 +459,77 @@ window.irsSdkV2.HostEventsHandler.onRemoveFromCart(skuCustomId);
 window.irsSdkV2.HostEventsHandler.onPurchase([skuCustomId1, skuCustomId2]);
 ```
 
-These call the shopper data endpoints for analytics and model feedback.
+`HostEventsHandler.onPurchase(...)` sends only SKU IDs from the browser. It does not replace mandatory server-side purchase reporting with unit-level purchase data.
 
-`HostEventsHandler.onFilterChecked()` exists in the SDK API surface but is currently a placeholder (not implemented). Do not rely on it for production tracking.
+## 5. Troubleshooting and Reference
 
-`/shopper/v1/data/vps-open` may exist in generated API contracts but is not a required part of this integration guide; follow the currently implemented SDK event helpers listed above.
+Use this section after you complete setup and choose a shopper option.
 
-> **Important:** `HostEventsHandler.onPurchase(...)` sends only SKU IDs. It is useful for client event tracking, but it does **not** replace the mandatory server-side purchase webhook flow in section **1.6**, where you should send unit-level purchase data (including price/currency) from your backend.
+### Iframes Not Displaying
 
-### 2.5 Product Page Sizing Block (Optional)
-
-For product detail pages, use the sizing iframe to show personalized size recommendations and provide access to VTO/3D features:
-
-```js
-window.irsSdkV2.showIrispheraIframeSizing(
-  document,
-  'irsSizingDiv',           // target div ID
-  null,                     // language (auto-detect)
-  recommendedSize,          // pre-computed size from sessionRecommendations (or null)
-  skuCustomId,              // canonical SKU for this product
-  onEditProfile,            // callback: user wants to edit profile
-  onViewRecommendations,    // callback: user wants to see recommendations
-  onVto,                    // callback: user triggered VTO
-  onTdPreview               // callback: user triggered 3D preview (receives glbUrl)
-);
-```
-
-**Callback signatures:**
-
-```js
-function onEditProfile() {
-  // Open modal with profile capture iframe
-  openModal();
-  window.irsSdkV2.showIrispheraIframe(document, 'irsIframeDiv', () => {
-    closeModal();
-    window.location.reload(); // Refresh to show updated size
-  });
-}
-
-function onViewRecommendations() {
-  // Navigate to recommendations page
-  window.location.href = '/collections/my-recommendations';
-}
-
-function onVto() {
-  // Open VTO iframe
-  openModal();
-  window.irsSdkV2.showIrispheraIframeVto(document, 'irsIframeDiv', null, skuCustomId);
-}
-
-function onTdPreview(glbUrl) {
-  // Open 3D preview iframe (glbUrl is passed from the sizing iframe)
-  if (!glbUrl) return;
-  openModal();
-  window.irsSdkV2.showIrispheraIframeTdPreview(document, 'irsIframeDiv', null, skuCustomId, glbUrl);
-}
-```
-
-**Getting the recommended size for a product:**
-
-```js
-// After fetchRecommendations() has been called
-const recs = window.irsSdkV2.Results.sessionRecommendations || [];
-const productRec = recs.find(r => r.skuCustomId === currentSkuCustomId);
-const recommendedSize = productRec?.size || null;
-```
-
-## 3. Virtual Try On (VTO)
-
-VTO opens a dedicated iframe that renders the try-on experience for a given `skuCustomId`.
-
-### 3.1 SDK Functions
-
-- `showIrispheraIframeVto(document, divId, language, skuCustomId)`
-- `closeIrispheraIframeVto()`
-
-### 3.2 Typical Flow
-
-```js
-openModal();
-window.irsSdkV2.showIrispheraIframeVto(document, 'irsIframeDiv', null, skuCustomId);
-```
-
-**Optional readiness check**
-
-You can check if a SKU is ready for VTO before showing the VTO button:
-
-`GET https://api.irisphera.com/shopper/v1/stylist-preview/{skuCustomId}`
-
-| Response Code | Meaning |
-| --- | --- |
-| `204 No Content` | VTO is available for this SKU |
-| `422 Unprocessable Entity` | VTO not available (e.g., swimwear, missing assets, or disabled) |
-| `404 Not Found` | SKU not found in catalog |
-
-```js
-// Example: check VTO availability before showing button
-async function isVtoAvailable(skuCustomId, accessToken) {
-  try {
-    const res = await fetch(
-      `https://api.irisphera.com/shopper/v1/stylist-preview/${skuCustomId}`,
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
-    return res.status === 204;
-  } catch {
-    return false;
-  }
-}
-```
-
-## 4. 360 / 3D Preview
-
-The 3D preview uses a dedicated iframe that needs a `skuCustomId` and a `glbUrl` (presigned asset URL).
-
-### 4.1 SDK Functions
-
-- `showIrispheraIframeTdPreview(document, divId, language, skuCustomId, glbUrl)`
-- `closeIrispheraIframeTdPreview()`
-
-### 4.2 Supplying the GLB URL
-
-Two supported approaches:
-
-1) **From the sizing iframe event**: when the sizing iframe triggers `TD_PREVIEW_TRIGGERED`, it sends a `glbUrl`. Pass that directly to `showIrispheraIframeTdPreview`.
-
-2) **From the API**: call the 3D preview endpoint on your server and pass the returned URL:
-
-`GET https://api.irisphera.com/shopper/v1/td-preview/{skuCustomId}`
-
-| Response Code | Meaning |
-| --- | --- |
-| `200 OK` | Returns a presigned GLB URL string payload (commonly JSON-encoded string) |
-| `422 Unprocessable Entity` | No 3D assets available for this SKU |
-| `404 Not Found` | SKU not found in catalog |
-
-Example usage:
-
-```js
-// Check 3D availability and get GLB URL
-async function get3dPreviewUrl(skuCustomId, accessToken) {
-  try {
-    const res = await fetch(
-      `https://api.irisphera.com/shopper/v1/td-preview/${skuCustomId}`,
-      { headers: { 'Authorization': `Bearer ${accessToken}` } }
-    );
-    if (res.status === 200) {
-      // Compatible with both JSON-encoded string and plain text URL payloads.
-      const raw = await res.text();
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return raw;
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// Open 3D preview
-const glbUrl = await get3dPreviewUrl(skuCustomId, accessToken);
-if (glbUrl) {
-  openModal();
-  window.irsSdkV2.showIrispheraIframeTdPreview(
-    document,
-    'irsIframeDiv',
-    null,
-    skuCustomId,
-    glbUrl
-  );
-}
-```
-
----
-
-## 5. Troubleshooting: Why Iframes May Not Display
-
-Iframes will silently fail to render in several scenarios:
-
-| Scenario | Cause | Solution |
+| Scenario | Likely cause | What to check |
 | --- | --- | --- |
-| **No access token** | `setAccessToken()` was never called or failed | Verify token fetch from your backend succeeds |
-| **Invalid/expired token** | Token rejected by Irisphera API | Check token expiry (25 min); implement `registerTokenFetcher` for auto-refresh |
-| **Wrong iframe origin config** | `window.IRISPHERA_TARGET_ORIGIN` missing or incorrect | Set target origin before SDK script load; verify exact scheme/host/port |
-| **VTO not available** | Product not ready for VTO (missing assets, swimwear, etc.) | Call readiness check API before showing VTO button |
-| **3D not available** | No GLB assets for this SKU | Call 3D preview API; only show button if URL returned |
-| **SKU not in catalog** | `skuCustomId` doesn't exist in your product feed | Verify product feed contains this SKU |
-| **Network/CORS issues** | Browser blocking iframe or API requests | Check browser console for CORS errors |
+| No iframe content | Token was never set | Confirm `setAccessToken()` ran after your backend returned a token. |
+| Token rejected | Invalid or expired token | Use `registerTokenFetcher` so the SDK can request a fresh token. |
+| Blank iframe | Origin mismatch | Confirm the iframe origin is `https://app.irisphera.com` or the Irisphera-provided override. |
+| VTO hidden | Product not ready | Check `GET /shopper/v1/stylist-preview/{skuCustomId}` before showing VTO. |
+| SKU missing | Catalog mismatch | Confirm the feed contains the same canonical `skuCustomId`. |
 
-### Enabling Debug Logs
+### Debug Logs
 
-The SDK log level defaults to `none`. For diagnosis, enable debug logs at runtime:
+The SDK log level defaults to `none`. Enable debug logs during diagnosis.
 
 ```js
 await window.irsSdkV2.whenReady();
-window.irsSdkV2.logLevel = 'debug'; // supported levels: debug, info, warn, error, none
+window.irsSdkV2.logLevel = 'debug';
 ```
 
-If needed, you can still use a local SDK override workflow for deep debugging.
+### Message Origin Checks
 
-**Step 1 (optional): Create a browser override**
+The SDK validates iframe postMessage events against the configured target origin and expected iframe window source.
 
-Use your browser's developer tools to redirect the CDN URL to your local file:
+Set `window.IRISPHERA_TARGET_ORIGIN` before the SDK script only when Irisphera gives you a different iframe origin.
 
-**Chrome DevTools:**
-1. Open DevTools (F12) > Sources tab
-2. Right-click in the left panel > Add folder to workspace > select folder containing your local SDK
-3. Right-click on the CDN-loaded `irispheraSdk.js` in the Network tab
-4. Select "Override content" and map to your local file
+If messages are rejected, check the browser console and confirm your site loads the expected Irisphera iframe host.
 
-**Firefox:**
-1. Open DevTools > Network tab
-2. Right-click the SDK request > "Edit and Resend" won't persist; use an extension like "Redirector" to map the CDN URL to a local server (e.g., `file://` or `localhost`)
+### Optional 3D Preview
 
-**Alternative: Local server override**
+3D preview is supporting UI. It needs a `skuCustomId` and a `glbUrl`.
 
-```bash
-# Serve local SDK on port 8080
-npx serve -l 8080 .
+The sizing iframe can pass `glbUrl` through the `onTdPreview` callback.
 
-# Then use browser extension or hosts file to redirect CDN requests
-```
-
-**Step 2: Manually set the access token (if using local override)**
-
-**Important:** The SDK stores the access token in cookies under the original domain (e.g., `yourstore.com`). When you override the SDK with a local file served from `localhost` or `file://`, the local SDK cannot read cookies from the original domain due to browser security restrictions.
-
-You must manually set the token via the browser console:
+You can also check 3D availability with the shopper 3D preview endpoint from code that already has a visitor token.
 
 ```js
-// In browser console, after page loads:
-// 1. First, get a valid token from your backend (or copy from Network tab)
-const token = '<paste-your-access-token-here>';
+async function get3dPreviewUrl(skuCustomId, accessToken) {
+  const res = await fetch(
+    `https://api.irisphera.com/shopper/v1/td-preview/${skuCustomId}`,
+    { headers: { 'Authorization': `Bearer ${accessToken}` } }
+  );
 
-// 2. Manually set it in the SDK
-window.irsSdkV2.setAccessToken(token, { skipValidation: true });
+  if (res.status !== 200) return null;
+
+  const raw = await res.text();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
 ```
 
-**Tip:** You can copy the token from the Network tab by finding the `/getUserToken` (or equivalent) request and copying the `accessToken` value from the response.
+### SDK Helper Functions
 
-**Step 3: Reload and check console**
+| Function | Purpose |
+| --- | --- |
+| `whenReady()` | Resolves when the SDK is initialized. |
+| `whenTokenReady()` | Resolves when an access token is available in SDK state. |
+| `setAccessToken(token, options)` | Sets the visitor token. Use `{ skipValidation: true }` when your backend already validated it. |
+| `registerTokenFetcher(fn)` | Registers an async token refresh function. |
+| `isUserProfileSavedToCookies()` | Returns whether the visitor has completed profile capture. |
+| `fetchRecommendations()` | Fetches recommendations into `Results.sessionRecommendations`. |
+| `closeIrispheraIframe()` | Closes the active iframe. |
+| `resetStorage()` | Clears SDK storage and triggers recovery behavior. |
+| `_getAccessToken()` | Returns the current access token for support checks. |
 
-With debug logging enabled, the console will show:
-- Token fetch/set events
-- Iframe creation and initialization
-- Message passing between parent and iframe
-- API call results and errors
-- VTO/3D readiness check results
-
-Example debug output:
-```
-[IRS SDK] DEBUG: setAccessToken called with skipValidation=true
-[IRS SDK] DEBUG: Token saved to storage, expires in 1500s
-[IRS SDK] DEBUG: showIrispheraIframeVto called for SKU: 12345678901
-[IRS SDK] DEBUG: Creating iframe with src: https://...
-[IRS SDK] DEBUG: Iframe ready, sending VTO_INIT payload
-[IRS SDK] ERROR: VTO init failed - SKU not available for VTO
-```
-
-### Message origin security checks
-
-The SDK validates iframe postMessage events against the configured target origin and expected iframe window source. If origin config is wrong, messages are rejected and iframes may appear stuck or blank.
-
-Checklist:
-
-1. Ensure `window.IRISPHERA_TARGET_ORIGIN` is correct and set before loading SDK.
-2. Ensure your site is loading the expected Irisphera iframe host.
-3. Check console logs for invalid origin/source errors.
-
----
-
-## 6. SDK Helper Functions Reference
-
-| Function | Returns | Description |
-| --- | --- | --- |
-| `whenReady()` | `Promise<SDK>` | Resolves when SDK is fully initialized |
-| `whenTokenReady()` | `Promise<void>` | Resolves when an access token is available in SDK state |
-| `setAccessToken(token, options)` | `Promise<void>` | Sets the access token. Use `{ skipValidation: true }` when server-validated. |
-| `registerTokenFetcher(fn)` | `void` | Registers async function to refresh tokens when they expire |
-| `isUserProfileSavedToCookies()` | `boolean` | Returns true if user has completed profile capture (legacy name; backed by unified SDK storage) |
-| `fetchRecommendations()` | `Promise<void>` | Fetches recommendations; results in `Results.sessionRecommendations` |
-| `closeIrispheraIframe()` | `void` | Closes the currently active iframe |
-| `resetStorage()` | `void` | Clears SDK storage/cookies and triggers recovery event (useful for support/debug) |
-| `_getAccessToken()` | `string \| null` | Returns current access token (useful for checking if token is set) |
-
----
-
-If you need a sample implementation of the modal/iframe wrapper or a reference integration, use the recommended pattern: load the SDK, fetch a token server-side for each visitor, set it via `setAccessToken`, and open iframes inside a dedicated modal container. This is the default model Irisphera tests and supports.
-
-For integration support or questions, contact your Irisphera technical representative.
+For integration support, contact your Irisphera technical representative.
