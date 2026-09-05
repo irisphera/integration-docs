@@ -1,518 +1,547 @@
 # Irisphera API Integration Guide
 
-Implementation guide for integrators that onboard fashion brands through the Irisphera public API, **API version 2.0.0**.
+Onboard merchants, load catalogs, and collect shopper activity through Octopus.
+This guide describes checked-in code, not verified production availability. Set
+`IRISPHERA_BASE_URL` to your approved environment and check its `/v3/api-docs` before
+generating a client or enabling v2.
 
-Download the OpenAPI 3.1 spec from `https://api.irisphera.com/v3/api-docs` to generate client code in your language with [OpenAPI Generator](https://openapi-generator.tech). All examples use the production server `https://api.irisphera.com` and these shell variables:
+- [Authentication](#authentication)
+- [Merchant onboarding](#merchant-onboarding)
+- [Catalog ingestion](#catalog-ingestion)
+- [Shopper sessions and identity](#shopper-sessions-and-identity)
+- [Interaction events](#interaction-events)
+- [Commerce events](#commerce-events)
+- [Shopper experiences](#shopper-experiences)
+- [Rollout](#rollout)
+- [Errors and retries](#errors-and-retries)
 
-## Guide Map
+## Authentication
 
-1. [Scope and credentials](#1-scope-and-credentials)
-2. [Errors](#2-errors)
-3. [End-to-end sequence](#3-end-to-end-sequence)
-4. [Merchant lifecycle (integrator)](#4-merchant-lifecycle-integrator)
-5. [Collections and visitor tokens (merchant)](#5-collections-and-visitor-tokens-merchant)
-6. [Prepare product data](#6-prepare-product-data)
-7. [Queue ingestion and verify](#7-queue-ingestion-and-verify)
-8. [Merchant operations](#8-merchant-operations)
-9. [Shopper session and identity](#9-shopper-session-and-identity)
-10. [Shopper experience APIs](#10-shopper-experience-apis)
-11. [Shopper analytics events](#11-shopper-analytics-events)
-12. [Runtime notes and limitations](#12-runtime-notes-and-limitations)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Launch checklist](#14-launch-checklist)
+Send exactly one credential per request. API keys belong on trusted backends only.
 
-## 1. Scope and credentials
-
-### Three authentication contexts
-
-| Context | Credential | Used on |
-| --- | --- | --- |
-| Integrator | Integrator API key | `/integrator/v1` routes |
-| Merchant | Caller-created merchant API key | `/merchant/v1` routes (server-side only) |
-| Visitor | Bearer access token (JWT) | `/shopper/v1` routes |
-
-
-### Secret handling
-
-- Store the integrator key and each merchant key in an enterprise secret manager and inject them at runtime; never store them in source, feeds, images, shared documents, or plaintext configuration.
-- Keep access to the integrator key separate from access to each managed merchant key.
-- Avoid real `curl -i` output in shared terminals or CI logs: merchant responses contain `apiKey`.
-- Keep TLS verification enabled for the API, image URLs, and feed URLs.
-
-## 2. Errors
-
-Declared errors use `application/problem+json` (RFC 9457):
-
-| Field | Meaning |
+| Routes | Header |
 | --- | --- |
-| `type` | URI identifying the problem type |
-| `title` | Short human-readable summary |
-| `detail` | Occurrence-specific explanation |
-| `status` | HTTP status code |
-| `instance` | URI identifying this occurrence |
-| `requestId` | Correlation identifier |
+| `/integrator/v1/*` | `INTEGRATOR-API-KEY: $INTEGRATOR_API_KEY` |
+| `/merchant/v1/*` | `MERCHANT-API-KEY: $MERCHANT_API_KEY` |
+| `/merchant/v2/*`, except customer-alias links | `CHANNEL-API-KEY: $CHANNEL_API_KEY` |
+| `/merchant/v2/customer-alias-links/{linkId}` | `IDENTITY-ADMIN-API-KEY: $IDENTITY_ADMIN_API_KEY` |
+| `/shopper/v2/*` | `Authorization: Bearer $ACCESS_TOKEN`; v2 session token required |
+| `/shopper/v1/*` | `Authorization: Bearer $ACCESS_TOKEN`; see experience and legacy flows below |
 
-Some `422` responses return a bare `{"detail": [...]}` instead. Treat the HTTP status as the primary control signal. Log `requestId` for support correlation; never log API keys or bearer tokens.
+`irisphera-api-key` is not the current authentication header. Merchant keys do not
+substitute for channel credentials. Each channel credential is bound to one merchant,
+channel instance, and installation epoch, with granted operation scopes and identity domains.
 
-## 3. End-to-end sequence
+Inject keys from a secret manager. Do not log tokens, continuation secrets, raw identity
+aliases, or merchant response bodies containing `apiKey`. Keep TLS verification enabled.
 
-1. Obtain the integrator key through your Irisphera enterprise process.
-2. Generate a merchant API key in your secret manager.
-3. Create the merchant with the integrator key; store its `merchantId`.
-4. Create a collection with the merchant key; store its `collectionId`.
-5. Prepare a single product, a bulk JSON feed, or a CSV feed.
-6. Queue one ingestion route with the merchant key.
-7. Verify the product appears in the collection's `fashionItems`.
-8. Issue visitor tokens from your backend with the visitor's `shopperId`; call `identify` once when an anonymous shopper logs in.
-9. Report commerce events from your backend.
+## Merchant onboarding
 
-## 4. Merchant lifecycle (integrator)
+1. Obtain an integrator key and generate a merchant key in your secret manager.
+2. Create the merchant; retain its `id` as `MERCHANT_ID`.
+3. Create a collection; retain its `id` as `COLLECTION_ID`.
+4. Ingest products and check their visibility before enabling shopper features.
 
-All six integrator routes derive ownership from the integrator key. Don't send an `integratorId` in any body. Lists contain only merchants you own; another integrator's merchant returns `403`, a missing merchant returns `404`.
+```bash
+curl -sS "$IRISPHERA_BASE_URL/integrator/v1/merchant" \
+  -H "INTEGRATOR-API-KEY: $INTEGRATOR_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data-binary @merchant.json
+```
 
-### Merchant request and response
+Supply `merchant.json` at runtime from your secret store, with required `name` and
+`apiKey` fields. Do not commit it. Creation returns `201` and the merchant record,
+including its key. Repeating the same key returns your existing merchant unchanged;
+a matching name updates your merchant in place. Retry only with the same intended input.
 
-`POST` and `PUT` share the request shape:
-
-| Field | Required | Rules and default |
-| --- | --- | --- |
-| `name` | Yes | Nonempty string |
-| `apiKey` | Yes | Nonempty, caller-created merchant key |
-| `themeConfig.themeFile` | No | Default `default.json` |
-| `flowConfig.apparel` | No | `MENSWEAR`, `WOMENSWEAR`, or `ALL`; default `ALL` |
-| `flowConfig.recommendationCriteria` | No | `NONE`, `PALETTE`, `SILHOUETTE`, `SIZING`, or `ALL`; default `ALL` |
-| `flowConfig.profileWizard` | No | `SIMPLE` or `MANNEQUIN`; default `MANNEQUIN` |
-| `flowConfig.recommendationTopK` | No | Integer of at least 10; default `50` |
-
-Responses contain `id`, `name`, `apiKey`, `themeConfig`, and `flowConfig`.
-
-### Routes
-
-| Route | Behavior |
+| Operation | Route / behavior |
 | --- | --- |
-| `GET /integrator/v1/merchant` | Lists your merchants; `X-Total-Count` equals the count |
-| `POST /integrator/v1/merchant` | Creates a merchant; reconciles existing ones (see below) |
-| `GET /integrator/v1/merchant/{merchantId}` | Gets one merchant |
-| `PUT /integrator/v1/merchant/{merchantId}` | Updates one merchant |
-| `GET /integrator/v1/merchant/{merchantId}/apikey` | Returns the stored merchant key |
-| `DELETE /integrator/v1/merchant/{merchantId}` | Permanently deletes the merchant |
+| List | `GET /integrator/v1/merchant`; array of owned merchants, `X-Total-Count` header |
+| Read | `GET /integrator/v1/merchant/{merchantId}` |
+| Update | `PUT /integrator/v1/merchant/{merchantId}`; requires `name` and `apiKey` |
+| Read key | `GET /integrator/v1/merchant/{merchantId}/apikey`; secret response |
+| Delete | `DELETE /integrator/v1/merchant/{merchantId}`; permanent, `204`; repeat returns `404` |
 
-#### List merchants
+Ownership comes from the integrator key, not a body `integratorId`. Another integrator's
+merchant returns `403`; a missing merchant returns `404`. Updates preserve omitted
+configuration values. Supported configuration:
 
-```bash
-curl -i -X GET "$IRISPHERA_BASE_URL/integrator/v1/merchant" \
-  -H "Accept: application/json" -H "irisphera-api-key: $IRISPHERA_INTEGRATOR_API_KEY"
-```
+| Field | Values / default |
+| --- | --- |
+| `themeConfig.themeFile` | `default.json` |
+| `flowConfig.apparel` | `MENSWEAR`, `WOMENSWEAR`, `ALL` (default) |
+| `flowConfig.recommendationCriteria` | `NONE`, `PALETTE`, `SILHOUETTE`, `SIZING`, `ALL` (default) |
+| `flowConfig.profileWizard` | `SIMPLE`, `MANNEQUIN` (default) |
+| `flowConfig.recommendationTopK` | Integer ≥ 10; default `50` |
 
-`200` — an array of your merchants.
-
-#### Create a merchant
-
-```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/integrator/v1/merchant" \
-  -H "Accept: application/json" -H "Content-Type: application/json" \
-  -H "irisphera-api-key: $IRISPHERA_INTEGRATOR_API_KEY" \
-  -d '{"name":"Example Fashion Brand","apiKey":"'"$MERCHANT_API_KEY"'"}'
-```
-
-`201` — the merchant, including `id`. Store it as `$MERCHANT_ID`.
-
-Create is reconciliatory: if the `apiKey` already belongs to you, the existing merchant is returned unchanged; if the `name` already belongs to you, that merchant is updated in place. You can safely retry create after an uncertain outcome.
-
-#### Get one merchant
+Create a collection with the merchant key:
 
 ```bash
-curl -i -X GET "$IRISPHERA_BASE_URL/integrator/v1/merchant/$MERCHANT_ID" \
-  -H "Accept: application/json" -H "irisphera-api-key: $IRISPHERA_INTEGRATOR_API_KEY"
+curl -sS "$IRISPHERA_BASE_URL/merchant/v1/collection" \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Autumn catalog"}'
 ```
 
-`200` — the merchant. Reading a legacy merchant can backfill missing configuration with server defaults.
+The `201` response contains `id`, `merchantId`, `title`, and optional `productFeed`.
+Set `productFeed` at creation if you need URL import.
+`GET /merchant/v1/collection` returns `{"collections":[...]}`.
+**Current limitation:** collection `PUT` creates a new collection ID rather than updating.
+Collection deletion, file-based deletion, and per-SKU deletion return `501`.
 
-#### Update a merchant
+## Catalog ingestion
 
-```bash
-curl -i -X PUT "$IRISPHERA_BASE_URL/integrator/v1/merchant/$MERCHANT_ID" \
-  -H "Accept: application/json" -H "Content-Type: application/json" \
-  -H "irisphera-api-key: $IRISPHERA_INTEGRATOR_API_KEY" \
-  -d '{"name":"Example Fashion Brand Europe","apiKey":"'"$MERCHANT_API_KEY"'","flowConfig":{"apparel":"ALL","recommendationCriteria":"SIZING","profileWizard":"MANNEQUIN","recommendationTopK":60}}'
-```
+### Product identifiers and formats
 
-`200` — the updated merchant. `name` and `apiKey` always replace their current values; omitted `themeConfig` or `flowConfig` values are preserved, not reset. Ownership can't be reassigned.
+Use one stable `skuCustomId` per model-and-color combination. Map size-level source SKUs
+to this ID and reuse it in recommendations, previews, and events. Do not substitute
+an order line ID or a Shopify variant ID unless it is your actual catalog identifier.
 
-#### Get a merchant API key
-
-```bash
-curl -i -X GET "$IRISPHERA_BASE_URL/integrator/v1/merchant/$MERCHANT_ID/apikey" \
-  -H "Accept: application/json" -H "irisphera-api-key: $IRISPHERA_INTEGRATOR_API_KEY"
-```
-
-`200` — `{"merchantId": "<uuid>", "apiKey": "<merchant-key>"}`. Use only when an authorized process needs the stored key; treat the response as a secret. No rotation, expiry, or revocation behavior is declared.
-
-#### Delete a merchant
-
-```bash
-curl -i -X DELETE "$IRISPHERA_BASE_URL/integrator/v1/merchant/$MERCHANT_ID" \
-  -H "Accept: application/json" -H "irisphera-api-key: $IRISPHERA_INTEGRATOR_API_KEY"
-```
-
-`204` — no body. Deletion is permanent, removes the merchant and its dependent data, and is irreversible; a repeated request returns `404`.
-
-### Declared statuses
-
-| Operation | Success | Other declared statuses |
-| --- | --- | --- |
-| List merchants | `200` | `401`, `403`, `500` |
-| Create merchant | `201` | `400`, `401`, `403`, `500` |
-| Get merchant | `200` | `400`, `401`, `403`, `404`, `500` |
-| Update merchant | `200` | `400`, `401`, `403`, `404`, `500` |
-| Get merchant key | `200` | `400`, `401`, `403`, `404`, `500` |
-| Delete merchant | `204` | `400`, `401`, `403`, `404`, `500` |
-
-## 5. Collections and visitor tokens (merchant)
-
-Switch to the merchant key: every `/merchant/v1` request sends `irisphera-api-key: $MERCHANT_API_KEY`.
-
-### Create a collection
-
-```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/merchant/v1/collection" \
-  -H "Accept: application/json" -H "Content-Type: application/json" \
-  -H "irisphera-api-key: $MERCHANT_API_KEY" \
-  -d '{"title":"Autumn 2026","productFeed":"'"$PRODUCT_FEED_URL"'"}'
-```
-
-`201` — `{"id": "<uuid>", "merchantId": "<uuid>", "title": "Autumn 2026", "productFeed": "https://..."}`. `title` is required; `productFeed` is optional but must be set before URL import. Store `id` as `$COLLECTION_ID` and keep a secure mapping between your brand record, `$MERCHANT_ID`, and `$COLLECTION_ID`.
-
-### Other collection operations
-
-- `GET /merchant/v1/collection` — lists all collections accessible to the merchant. `200` — `{"collections": [...]}`; errors `400`, `401`, `500`.
-- `PUT /merchant/v1/collection/{collectionId}` — same body as create; `200`; errors `400`, `401`, `403`, `404`, `500`. **Reference-implementation limitation:** the current implementation creates a second collection with a new ID instead of updating — verify the response.
-- `DELETE /merchant/v1/collection/{collectionId}` — `204`, destructive (deletes the collection and its fashion items); errors `400`, `401`, `500`, `501`. **The reference implementation returns `501 Not Implemented`.**
-
-### Issue visitor tokens
-
-`GET /merchant/v1/access-token?shopperId=<id>` — call from your backend only; never expose the merchant key to browsers:
-
-```bash
-curl -i -X GET "$IRISPHERA_BASE_URL/merchant/v1/access-token?shopperId=USER_123" \
-  -H "Accept: application/json" -H "irisphera-api-key: $MERCHANT_API_KEY"
-```
-
-`200` — `{"accessToken": "<JWT>"}`; errors `401`, `402` (quota exceeded), `500`. Pass only this JWT to shopper-facing code, which sends it as `Authorization: Bearer <token>` on `/shopper/v1` routes.
-
-## 6. Prepare product data
-
-### Canonical `skuCustomId`
-
-Use one stable `skuCustomId` per model-and-color combination: all sizes of one color share it, different colors use different IDs. Map size-level source SKUs to the color-level value before ingestion, and use the same ID across catalog, recommendations, VTO, 3D preview, and analytics events.
-
-### Required and operational fields
-
-| Field | Required | Notes |
-| --- | --- | --- |
-| `skuCustomId` | Yes | Stable model-and-color identifier |
-| `title` | Yes | Nonblank product title |
-| `description` | Yes | Plain text |
-| `productImages` | Yes | Nonempty array; include front and back views here too |
-| `productFeaturedImage` | No | Required for collection processing |
-| `productPageUrl` | No | Required for collection processing |
-| `gender` | No | `MEN`, `WOMEN`, or `UNISEX` |
-| `productFrontImage` | No | Required when IGG or VTO is needed |
-| `productBackImage` | No | Required when IGG or VTO is needed |
-
-Images may be URLs or data URIs (`data:image/webp;base64,<base64>`); accepted bytes are PNG, JPEG, WebP, and AVIF. Prefer reachable HTTPS URLs because processing is asynchronous. No product-count, SKU-length, image-count, or per-image size limit is declared. Canonical feeds omit price fields: public price persistence isn't guaranteed.
-
-### Single-product JSON (camelCase)
+Single-product requests use camelCase:
 
 ```json
 {
   "skuCustomId": "STYLE-100-BLACK",
-  "title": "Tailored Wool Blazer, Black",
-  "description": "Single-breasted wool blazer with a fitted waist.",
+  "title": "Black wool blazer",
+  "description": "Single-breasted wool blazer.",
   "gender": "WOMEN",
-  "productFrontImage": "https://cdn.example.com/style-100-black-front.webp",
-  "productBackImage": "https://cdn.example.com/style-100-black-back.webp",
+  "productFrontImage": "https://cdn.example.com/blazer-front.webp",
+  "productBackImage": "https://cdn.example.com/blazer-back.webp",
   "productImages": [
-    "https://cdn.example.com/style-100-black-front.webp",
-    "https://cdn.example.com/style-100-black-back.webp",
-    "https://cdn.example.com/style-100-black-detail.webp"
+    "https://cdn.example.com/blazer-front.webp",
+    "https://cdn.example.com/blazer-back.webp"
   ],
-  "productFeaturedImage": "https://cdn.example.com/style-100-black-featured.webp",
-  "productPageUrl": "https://shop.example.com/products/style-100-black"
+  "productFeaturedImage": "https://cdn.example.com/blazer-front.webp",
+  "productPageUrl": "https://shop.example.com/products/blazer"
 }
 ```
 
-### Bulk JSON (current runtime)
+`skuCustomId`, `title`, `description`, and a nonempty `productImages` array are required.
+Supply the featured image and product page for collection processing, and front/back
+views for IGG or VTO. Supported gender values are `MEN`, `WOMEN`, `UNISEX`,
+`CHILDREN_GIRL`, and `CHILDREN_BOY`.
+Images may be reachable URLs or data URIs; supported bytes are PNG, JPEG, WebP, and AVIF.
+Prefer HTTPS URLs that remain available during asynchronous processing. Catalog price
+persistence is not guaranteed; use the commerce event amount fields for reporting.
 
-Bulk feeds require an outer `products` object; image and page fields use snake_case:
+Bulk JSON requires a `products` wrapper and snake_case image/page fields:
 
 ```json
 {
-  "products": [
-    {
-      "skuCustomId": "STYLE-100-BLACK",
-      "title": "Tailored Wool Blazer, Black",
-      "description": "Single-breasted wool blazer with a fitted waist.",
-      "gender": "WOMEN",
-      "product_front_image": "https://cdn.example.com/style-100-black-front.webp",
-      "product_back_image": "https://cdn.example.com/style-100-black-back.webp",
-      "product_images": [
-        "https://cdn.example.com/style-100-black-front.webp",
-        "https://cdn.example.com/style-100-black-back.webp"
-      ],
-      "product_featured_image": "https://cdn.example.com/style-100-black-featured.webp",
-      "product_page_url": "https://shop.example.com/products/style-100-black"
-    }
-  ]
+  "products": [{
+    "skuCustomId": "STYLE-100-BLACK",
+    "title": "Black wool blazer",
+    "description": "Single-breasted wool blazer.",
+    "gender": "WOMEN",
+    "product_front_image": "https://cdn.example.com/blazer-front.webp",
+    "product_back_image": "https://cdn.example.com/blazer-back.webp",
+    "product_images": ["https://cdn.example.com/blazer-front.webp", "https://cdn.example.com/blazer-back.webp"],
+    "product_featured_image": "https://cdn.example.com/blazer-front.webp",
+    "product_page_url": "https://shop.example.com/products/blazer"
+  }]
 }
 ```
 
-Save it as `$PRODUCT_JSON_FILE` for upload, or publish it at the collection's `productFeed` URL.
-
-### CSV (current runtime)
-
-Use camelCase headers; separate multiple `productImages` values with `|`:
+CSV uses camelCase headers and `|` between `productImages` URLs:
 
 ```csv
 skuCustomId,title,description,gender,productFrontImage,productBackImage,productImages,productFeaturedImage,productPageUrl
-STYLE-100-BLACK,"Tailored Wool Blazer, Black","Single-breasted wool blazer with a fitted waist.",WOMEN,https://cdn.example.com/style-100-black-front.webp,https://cdn.example.com/style-100-black-back.webp,https://cdn.example.com/style-100-black-front.webp|https://cdn.example.com/style-100-black-back.webp|https://cdn.example.com/style-100-black-detail.webp,https://cdn.example.com/style-100-black-featured.webp,https://shop.example.com/products/style-100-black
+STYLE-100-BLACK,Black wool blazer,Single-breasted wool blazer.,WOMEN,https://cdn.example.com/front.webp,https://cdn.example.com/back.webp,https://cdn.example.com/front.webp|https://cdn.example.com/back.webp,https://cdn.example.com/front.webp,https://shop.example.com/products/blazer
 ```
 
-Header matching is case-insensitive. `skuCustomId` and `title` headers are required, plus at least one of `productFrontImage` or `productFeaturedImage`. Each row needs nonblank `skuCustomId`, `title`, and one nonblank front-or-featured image value; invalid rows may be skipped while later rows continue.
+CSV headers are case-insensitive. `skuCustomId`, `title`, and at least one of
+`productFrontImage` or `productFeaturedImage` must be present. Rows missing those values
+may be skipped. JSON and CSV are supported; XLSX is not. The configured multipart limit
+is currently 100 MB, not a permanent API limit.
 
-## 7. Queue ingestion and verify
+### Submit and verify
 
-Choose one route per submission. Every success below is `202 Accepted`: queued for asynchronous processing, not completed. No response body, batch ID, batch-status endpoint, webhook, or callback is declared.
+Choose one submission route:
 
-### Queue one product
-
-`POST /merchant/v1/collection/{collectionId}/products` with the [single-product JSON](#single-product-json-camelcase) body:
+| Method and route | Input |
+| --- | --- |
+| `POST /merchant/v1/collection/{collectionId}/products` | Single-product JSON above |
+| `POST /merchant/v1/collection/{collectionId}/file?useSeasonFiltering=false` | Multipart `file`, media type `application/json` or `text/csv` |
+| `POST /merchant/v1/collection/{collectionId}/import-from-url` | Optional `{"useSeasonFiltering":false}`; fetches the collection's `productFeed` |
 
 ```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/products" \
-  -H "Accept: application/json" -H "Content-Type: application/json" \
-  -H "irisphera-api-key: $MERCHANT_API_KEY" \
-  -d '{"skuCustomId":"'"$PRODUCT_SKU"'","title":"Tailored Wool Blazer, Black","description":"Single-breasted wool blazer with a fitted waist.","gender":"WOMEN","productFrontImage":"https://cdn.example.com/style-100-black-front.webp","productBackImage":"https://cdn.example.com/style-100-black-back.webp","productImages":["https://cdn.example.com/style-100-black-front.webp","https://cdn.example.com/style-100-black-back.webp"],"productFeaturedImage":"https://cdn.example.com/style-100-black-featured.webp","productPageUrl":"https://shop.example.com/products/style-100-black"}'
+curl -sS "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/file" \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" \
+  -F "file=@products.json;type=application/json"
 ```
 
-`202`; errors `400`, `401`, `402`, `403`, `404`, `500`.
+Ingestion returns `202`, not a completion receipt. The file controller currently discards
+submission failures and can return `202` when nothing was queued. Verify with
+`GET /merchant/v1/collection/{collectionId}/products`, whose body is `{"fashionItems":[...]}`.
+Find the expected `skuCustomId`; an empty array is valid and does not prove completion.
+There is no public batch-status endpoint, callback, or completion deadline.
 
-### Queue a JSON or CSV file
+Within a feed, later duplicate SKUs are filtered. Existing collection items are skipped
+when `irisphera.import.batch.cache.skip-existing-collection-items` is enabled (the default).
+Do not assume upsert semantics.
 
-`POST /merchant/v1/collection/{collectionId}/file` — multipart `file` field; `useSeasonFiltering` is a query parameter (optional, default `false`):
+**URL import warning:** the current implementation forwards incoming authentication
+headers to the feed host after filtering selected transport headers. Use single-product
+or file ingestion for external/untrusted hosts; do not send credentials to a third-party feed.
+
+### Other merchant operations
+
+- `GET /merchant/v1/products`: `fashionItems` across accessible collections; does not populate presigned image URLs.
+- `GET /merchant/v1/subscription`: `featureDetection`, `shopperRecommendation`, and `shopper2dPreview`, each with `limit` and `current`.
+- `POST /merchant/v1/report`: aggregate report for `{"startTime":"2026-01-01T00:00:00Z","endTime":"2026-02-01T00:00:00Z","zone":"Europe/Bucharest"}`; interval is `[startTime,endTime)`.
+- `POST /merchant/v1/vto2d`: demo VTO; multipart `featuredImage` and `userPhoto`, optional `description` query parameter. Not the shopper flow.
+- `POST /merchant/v1/products/style-occasion-analysis`: currently `501`.
+
+## Shopper sessions and identity
+
+V2 separates your external aliases from Octopus's canonical `shopperId` UUID. A namespace
+must be registered to the merchant and granted to the channel. Use a random anonymous
+epoch before login and a verified platform customer ID after login. Never use email,
+IP address, user agent, or a device fingerprint as proof of customer identity.
+
+### Create and inspect a session
+
+Call from your backend after validating the storefront session. This example assumes
+the namespace and channel have already been registered:
 
 ```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/file?useSeasonFiltering=false" \
-  -H "Accept: text/plain" -H "irisphera-api-key: $MERCHANT_API_KEY" \
-  -F "file=@$PRODUCT_JSON_FILE;type=application/json"
+curl -sS "$IRISPHERA_BASE_URL/merchant/v2/shopper-sessions" \
+  -H "CHANNEL-API-KEY: $CHANNEL_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $SESSION_OPERATION_ID" \
+  -d '{"channelId":"0198f2a0-7b42-7000-8000-000000000201","currentIdentity":{"namespace":"channel/0198f2a0-7b42-7000-8000-000000000201/anonymous","kind":"ANONYMOUS","externalId":"epoch-7b0915a4"}}'
 ```
 
-For CSV, upload `$PRODUCT_CSV_FILE` with `type=text/csv`. `202` (may return plain text); errors `400`, `401`, `402`, `403` (another merchant's collection), `404` (missing collection), `500`.
-
-### Queue the collection feed URL
-
-`POST /merchant/v1/collection/{collectionId}/import-from-url` — the server fetches the collection's `productFeed`; the body is optional:
+The response contains `sessionId`, canonical `shopperId`, `accessToken`, `tokenType`,
+`expiresAt`, `identityVersion`, `linkStatus`, `attributionRef`, and, for a new anonymous
+session, `anonymousContinuation`. Responses use `Cache-Control: no-store`. Pass only the shopper bearer token and nonsecret UI/session
+metadata to shopper code. Keep the continuation in server-controlled state, never
+cart attributes or arbitrary JavaScript.
+Use the returned expiry, not a hard-coded token lifetime.
 
 ```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/import-from-url" \
-  -H "Accept: application/json" -H "Content-Type: application/json" \
-  -H "irisphera-api-key: $MERCHANT_API_KEY" -d '{"useSeasonFiltering":false}'
+curl -sS "$IRISPHERA_BASE_URL/shopper/v2/session" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-`202`; errors `400`, `401`, `402`, `403`, `404`, `415` (unsupported feed content type), `500`. The feed must be reachable over HTTP or HTTPS (HTTPS preferred) and return a supported JSON or CSV media type.
+### Login, refresh, and logout
 
-> **Security warning (current runtime, not a supported contract):** the reference implementation forwards incoming request headers to the feed host, excluding only host, connection, `content-*`, `accept*`, `user-agent*`, `origin*`, and `referer*` headers. `irisphera-api-key` and `Authorization` may reach the feed host. Don't use URL import with an external or untrusted feed host; prefer single-product or file ingestion.
-
-### Verify through `fashionItems`
-
-`GET /merchant/v1/collection/{collectionId}/products`:
-
-```bash
-curl -i -X GET "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/products" \
-  -H "Accept: application/json" -H "irisphera-api-key: $MERCHANT_API_KEY"
-```
-
-`200` — products visible to the merchant in this collection:
+On login, call the session endpoint with the verified customer alias and proof of the
+immediately preceding anonymous session:
 
 ```json
 {
-  "fashionItems": [
-    {
-      "merchantId": "0198f2a0-7b42-7000-8000-000000000001",
-      "collectionId": "0198f2a0-7b42-7000-8000-000000000101",
-      "skuCustomId": "STYLE-100-BLACK",
-      "data": {
-        "title": "Tailored Wool Blazer, Black",
-        "gender": "WOMEN",
-        "placement": "UPPER",
-        "category": "blazer",
-        "descriptors": ["tailored", "wool"],
-        "images": [
-          {
-            "imageView": "FEATURED",
-            "file": { "path": "s3://catalog-assets/style-100-black/featured.webp", "presignedUrl": "https://cdn.example.com/style-100-black-featured.webp" }
-          }
-        ],
-        "retailerDescription": "Single-breasted wool blazer with a fitted waist.",
-        "productPageUrl": "https://shop.example.com/products/style-100-black"
-      }
-    }
-  ]
+  "channelId": "0198f2a0-7b42-7000-8000-000000000201",
+  "linkOperationId": "0198f2a0-7b42-7000-8000-000000000301",
+  "currentIdentity": {
+    "namespace": "channel/0198f2a0-7b42-7000-8000-000000000201/customer",
+    "kind": "CUSTOMER",
+    "externalId": "customer-123"
+  },
+  "previousAnonymousSession": {
+    "sessionId": "0198f2a0-7b42-7000-8000-000000000401",
+    "anonymousContinuation": "<server-held continuation>"
+  }
 }
 ```
 
-Find your `skuCustomId` to confirm visibility. An empty array is a valid read; it doesn't prove queued work finished. No polling frequency or completion deadline is declared — choose retry timing in your client policy.
+The two transition fields must be supplied together. Do not move an anonymous identity
+already linked to a different customer. A direct customer session without anonymous proof
+can sign in the customer but must not link unrelated browsing history.
 
-**Duplicate behavior (current runtime):** within one feed, the first occurrence of an SKU wins and later occurrences are filtered; an SKU already present in the collection is skipped. This is configuration-dependent, not an unconditional upsert guarantee.
-
-### Declared onboarding statuses
-
-| Operation | Success | Other declared statuses |
-| --- | --- | --- |
-| Create collection | `201` | `400`, `401`, `500` |
-| Queue one product | `202` | `400`, `401`, `402`, `403`, `404`, `500` |
-| Upload file | `202` | `400`, `401`, `402`, `403`, `404`, `500` |
-| Import from URL | `202` | `400`, `401`, `402`, `403`, `404`, `415`, `500` |
-| Read collection products | `200` | `400`, `401`, `500` |
-
-`402 Payment Required` means the current plan's quota is exceeded; `GET /merchant/v1/subscription` (section 8) explains which feature is exhausted.
-
-## 8. Merchant operations
-
-- `GET /merchant/v1/products` — lists products across all collections accessible to the merchant. `200` — `{"fashionItems": [...]}`; errors `400`, `401`, `500`. Image records contain storage `path`s, but this operation does not populate presigned URLs.
-- `GET /merchant/v1/subscription` — `200` — `{"featureDetection": {...}, "shopperRecommendation": {...}, "shopper2dPreview": {...}}`, each a `MeteredQuota` `{"limit": N, "current": N}`; errors `400`, `401`, `500`. Use it to explain quota failures; it isn't a substitute for handling `402`.
-- `POST /merchant/v1/report` — body `{"startTime": "<ISO 8601>", "endTime": "<ISO 8601>", "zone": "Europe/Bucharest"}` for the half-open period `[startTime, endTime)`; `200` — aggregate report; errors `400`, `401`, `500`.
-- `POST /merchant/v1/vto2d` — merchant-key demo VTO for testing and integration validation, not the shopper production flow. Multipart `featuredImage` and `userPhoto` (both required); `description` is a query parameter:
-
-```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/merchant/v1/vto2d?description=linen%20shirt" \
-  -H "Accept: application/json" -H "irisphera-api-key: $MERCHANT_API_KEY" \
-  -F "featuredImage=@product.webp" -F "userPhoto=@shopper.webp"
-```
-
-`200` — `{"generatedImage": "<base64 WebP>"}`; errors `400`, `401`, `420` (user image unusable), `422` (image processing failed), `500`.
-
-- `POST /merchant/v1/products/style-occasion-analysis` — declared `200` with style and occasion filters; **the reference implementation returns `501 Not Implemented`**.
-
-## 9. Shopper session and identity
-
-Shopper APIs authenticate with `Authorization: Bearer <visitor token>`. Your backend issues tokens; shopper-facing code never sees either API key.
-
-**Identity model.** Use one stable `shopperId` per visitor: before login, a persistent anonymous identifier (for example a first-party cookie); after login, the stable customer identifier from your CRM, commerce, or identity system. Issue tokens with the current `shopperId` via `GET /merchant/v1/access-token?shopperId=<id>`.
-
-**Identity transition.** When an anonymous shopper logs in and activity was recorded under the anonymous ID, call `POST /shopper/v1/data/identify` once with `{"anonymousShopperId": "...", "customerId": "..."}` — `204`; errors `400`, `401`, `409` (no recorded activity or already associated), `422`, `500`. Use the `customerId` as the `shopperId` for all future tokens. Don't call it on every session or during token refresh.
-
-**Session bootstrap.** `GET /shopper/v1/auth/access-token` validates the token and returns `TokenInfo`: `shopperId`, `expiresInSeconds`, `merchantName`, `enabledFeatures` (`SHOPPER_RECOMMENDATIONS`, `STYLIST_PREVIEW`), `sizingConfig`, `themeConfig`, `flowConfig` — `200`; errors `401`, `404` (the merchant no longer exists). A token can be valid while an individual feature is unavailable.
-
-## 10. Shopper experience APIs
-
-### Recommendations
-
-`POST /shopper/v1/recommendations`:
-
-```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/shopper/v1/recommendations" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
-  -d '{"encodedProfileData":"<BASE64_JSON>","offset":0,"limit":12,"filters":[],"collectionIds":["0198f2a0-7b42-7000-8000-000000000101"]}'
-```
-
-`encodedProfileData` (required) is Base64-encoded JSON from the shopper profile flow — encoding, not encryption, so treat it as sensitive. `offset` (≥ 0), `limit` (≥ 1), `collectionIds` (UUIDs; empty means all collections), and `filters` (strings) narrow the results. `200` — `{"silhouette": ..., "palette": ..., "generalSizing": ..., "merchantCollections": [...], "recommendationsByCollection": [{"collection": ..., "recommendations": [{"skuCustomId": "...", "size": "...", "images": [...], "productPageUrl": "..."}]}]}`; errors `400`, `401`, `422`, `500`. Match each `skuCustomId` to your storefront catalog for price, image, and availability.
-
-**Current runtime:** the reference implementation applies `filters` but ignores `offset`, `limit`, and `collectionIds` — don't rely on those three controls until the implementation is corrected.
-
-### Virtual try-on
-
-- **Readiness:** `GET /shopper/v1/stylist-preview/{skuCustomId}` — `200` — a placement category: `UNAVAILABLE`, `UPPER`, `LOWER`, `FULL`, `HEAD`, `FEET`, `ACCESSORY`, or `JEWELRY`. `UNAVAILABLE` means a preview must not be requested. Errors `400`, `401`, `404`, `422`, `500`.
-- **Generate:** `POST /shopper/v1/stylist-preview` — query parameters `skuCustomId` (required) and `isFaceBlurred` (optional; tells the service whether the client already blurred the face), with multipart `targetImage` (required):
-
-```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/shopper/v1/stylist-preview?skuCustomId=STYLE-100-BLACK" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" \
-  -F "targetImage=@shopper.webp"
-```
-
-`200` — `{"generatedImage": "<base64 WebP>"}`; errors `400`, `401`, `404` (SKU missing or inaccessible), `420` (shopper imagery unusable), `422`, `500`. On `420` or `422`, ask for another shopper photo or fall back to the product page.
-
-- `GET /shopper/v1/stylist-preview` (list of VTO-ready items) is declared but **the reference implementation responds with an error** — use per-SKU readiness instead.
-
-### 3D preview
-
-`GET /shopper/v1/td-preview/{skuCustomId}` — `200` — a temporary download URL for the SKU's 3D asset (short-lived; don't persist it); errors `400`, `401`, `404`, `422` (no usable asset), `500`.
-
-### Body measurements
-
-`POST /shopper/v1/body-measurements`:
-
-```bash
-curl -i -X POST "$IRISPHERA_BASE_URL/shopper/v1/body-measurements" \
-  -H "Authorization: Bearer <ACCESS_TOKEN>" -H "Content-Type: application/json" \
-  -d '{"user_gender":"WOMEN","user_height":170,"img_data_main":"<raw base64>","img_data_side":"<raw base64>"}'
-```
-
-`user_gender` (required), `user_height` in centimeters (required), `img_data_main` (required; raw base64 without a data-URI prefix), and `img_data_side` (optional). `200` — `{"measurement_bust": ..., "measurement_waist": ..., "measurement_hips": ...}` in centimeters; errors `400`, `401`, `422`, `500`.
-
-### Color extraction
-
-`POST /shopper/v1/color-extraction` — body `{"img_data_main": "<raw base64 selfie>"}` (required). `200` — `{"skin_color_hex": "...", "eyes_color_hex": "...", "hair_color_hex": "..."}`; errors `400`, `401`, `422`, `500`.
-
-Obtain the shopper's consent before transmitting photos, and avoid retaining them.
-
-## 11. Shopper analytics events
-
-Report every completed order from your backend, even when the shopper didn't use Irisphera features. All events are `POST` requests with the visitor token; `204` is a best-effort acknowledgement (retrying records duplicate events); errors `400`, `401`, `422`, `500`. The merchant and user come from the token. Each array entry is one unit — repeat a SKU to express quantity. These endpoints record analytics; they don't create or mutate orders.
-
-| Event | Endpoint | Body |
-| --- | --- | --- |
-| Order created | `POST /shopper/v1/data/order-create` | `{"skuCustomIds": [{"skuCustomId": "STYLE-100-BLACK", "price": "99.00 EUR"}]}` |
-| Order cancelled | `POST /shopper/v1/data/order-cancelled` | same |
-| Return | `POST /shopper/v1/data/return` | same |
-| Product page viewed | `POST /shopper/v1/data/product-page` | `{"skuCustomId": "STYLE-100-BLACK"}` |
-| 3D preview opened | `POST /shopper/v1/data/td-preview` | `{"skuCustomId": "STYLE-100-BLACK"}` — only after the preview is actually shown |
-
-`price` is optional but should be supplied for revenue and average-order-value reporting. Accepted inputs: an unsigned, ungrouped decimal amount with at most two fractional digits (a period or comma may be the decimal separator) and either a three-letter currency code before or after the amount separated by whitespace, or `$`, `€`, or `£` immediately before it (`$` maps to USD, `€` to EUR, `£` to GBP; codes are canonicalized to uppercase). The canonical stored form is `12.34 USD`. Malformed values are stored raw and excluded from reporting.
-
-## 12. Runtime notes and limitations
-
-These describe the current implementation; they aren't additions to the public contract:
-
-- Ingestion converts JSON and CSV only. The spec's file description mentions XLSX, but the runtime has no XLSX converter — don't submit or recommend XLSX.
-- The current multipart file and request caps are 100 MB (runtime configuration, not a declared limit).
-- A file route's `202` doesn't prove that parsing or asynchronous processing succeeded — verify through `fashionItems`.
-- Duplicate SKUs: the first occurrence wins within a feed, and an SKU already present in a collection is skipped (configuration-dependent, not upsert).
-- `PUT /merchant/v1/collection/{collectionId}` creates a second collection with a new ID instead of updating (reference implementation).
-- These operations are declared but the reference implementation returns `501 Not Implemented`: `DELETE /merchant/v1/collection/{collectionId}`, `DELETE /merchant/v1/collection/{collectionId}/file`, `DELETE /merchant/v1/collection/{collectionId}/products/{skuCustomId}`, `POST /merchant/v1/products/style-occasion-analysis`, and `GET /shopper/v1/stylist-preview` (list).
-- URL import forwards most request headers to the feed host, including `irisphera-api-key` and `Authorization` (see section 7) — don't use it with external or untrusted feed hosts.
-- Recommendations: the reference implementation applies `filters` but ignores `offset`, `limit`, and `collectionIds` (see section 10).
-- No upsert, price persistence, callbacks, batch tracking, or completion deadline is guaranteed.
-
-## 13. Troubleshooting
-
-| Symptom | Check |
+| Operation | Route |
 | --- | --- |
-| `401` on integrator route | Send the integrator key, not a merchant key. |
-| `401` on merchant route | Send the caller-created merchant key. |
-| `402` on merchant routes | Quota exceeded — see `GET /merchant/v1/subscription`. |
-| `403` on merchant routes | The collection belongs to another merchant. |
-| `404` after merchant delete | Deletion is permanent; repeated requests return `404`. |
-| `409` on `identify` | The anonymous shopper has no recorded activity, or is already associated. |
-| `415` on URL import | The feed must be JSON or CSV with a matching media type. |
-| `420` or `422` on imagery routes | Input photos are unusable or processing failed. |
-| `501` on collection or product routes | Declared but not implemented by the reference implementation. |
-| Product missing after `202` | Read `fashionItems`; queue acceptance isn't completion. |
-| Empty `fashionItems` | Check product shape, required text, image reachability, and collection ID. |
+| Refresh from trusted backend | `POST /merchant/v2/shopper-sessions/{sessionId}/access-tokens` |
+| Revoke from trusted backend | `DELETE /merchant/v2/shopper-sessions/{sessionId}` |
+| Shopper logout | `DELETE /shopper/v2/session` |
+| Durable anonymous-to-customer link | `PUT /merchant/v2/shopper-identity-links/{linkId}` |
+| Privileged customer-alias link | `PUT /merchant/v2/customer-alias-links/{linkId}` |
 
-## 14. Launch checklist
+Refresh only after revalidating the current platform login or anonymous continuation.
+Account changes require a new session, not a refresh. On logout, discard tokens and
+continuation state and create a new anonymous epoch. Do not reuse a logged-in customer's
+identity for the next visitor on a shared browser.
 
-- Use API version 2.0.0 at `https://api.irisphera.com`; generate clients from the spec at `/v3/api-docs`.
-- Send the integrator key only on `/integrator/v1`, the merchant key only on `/merchant/v1`, and bearer tokens only on `/shopper/v1`; never combine key and bearer authentication.
-- Create each merchant key before onboarding and store it in a secret manager.
-- Retry merchant creation freely: it reconciles by `apiKey` and `name`.
-- On merchant `PUT`, always include `name` and `apiKey`; omit configuration fields you want preserved.
-- Store `merchantId` and `collectionId` with your brand record.
-- Use stable model-and-color `skuCustomId` values across catalog and shopper flows; use `MEN`, `WOMEN`, or `UNISEX` when gender is present.
-- Use only JSON or CSV for ingestion; prefer single-product or file ingestion for external or untrusted feed hosts.
-- Treat every ingestion `202` as queued and verify the SKU through `fashionItems`.
-- Issue tokens with the visitor's current `shopperId`; call `identify` once at login; expose only visitor tokens to the frontend.
-- Report orders, cancellations, and returns from the backend with canonical SKUs, repeating a SKU per unit.
-- Redact API keys and bearer tokens from every observability and support channel; log `requestId`.
-- Don't assume upsert, price persistence, callbacks, batch tracking, or a completion deadline.
+Durable links require `identity:link`, the registered domain grants, and anonymous-session
+proof; raw aliases are not link authority. Reuse the login's `linkOperationId` as `linkId`
+when retrying that same link through an outbox. Customer-to-customer alias links require the
+separate identity-admin credential and approved evidence. See the environment's OpenAPI
+for those request shapes; do not infer a link from equal email addresses.
+
+### Legacy compatibility
+
+`GET /merchant/v1/access-token?shopperId=<external-id>` still issues legacy tokens with a
+merchant key. `GET /shopper/v1/auth/access-token` returns legacy `TokenInfo` and UI config.
+When legacy identify compatibility is enabled, `POST /shopper/v1/data/identify` uses
+`anonymousShopperId` and `customerId`; it can
+return `409` for no recorded activity or an existing association. Do not mix that flow
+with v2 session continuation and canonical UUIDs, or fall back to it after a v2 auth failure.
+
+## Interaction events
+
+Use `PUT /shopper/v2/events/{sourceEventId}` with the v2 shopper bearer token. Generate
+one UUID when the event occurs, not on each delivery attempt. `channelId` must match the
+token. Do not send `subject`, customer IDs, aliases, or an order payload from the browser.
+
+```bash
+curl -sS -X PUT "$IRISPHERA_BASE_URL/shopper/v2/events/$SOURCE_EVENT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"schemaVersion":2,"channelId":"0198f2a0-7b42-7000-8000-000000000201","type":"PRODUCT_VIEWED","occurredAt":"2026-01-15T10:00:00Z","product":{"skuCustomId":"STYLE-100-BLACK"}}'
+```
+
+Observation types are `PRODUCT_VIEWED`, `ADD_TO_CART`, `REMOVE_FROM_CART`, and
+`VIRTUAL_TRY_ON`. Report observed actions, not an attempted request that failed.
+For a trusted server outbox, use `PUT /merchant/v2/interaction-events/{sourceEventId}`
+with `CHANNEL-API-KEY`, `events:write`, the same product payload, and a server-captured
+`subject`. A background worker should not mint shopper JWTs to deliver observations.
+
+## Commerce events
+
+Report authoritative orders from your backend regardless of whether the customer used
+Irisphera. These endpoints record facts; they do not create or change commerce-platform orders.
+Use `PUT /merchant/v2/commerce-events/{sourceEventId}` with a channel credential holding
+`events:write`. `ORDER_CREATED` means the platform accepted the order, not payment settlement.
+Other types are `ORDER_CANCELLED`, `ORDER_RETURNED`, `REFUND`, and `PAYMENT_CAPTURED`.
+
+Save the following as `order-event.json`:
+
+```json
+{
+  "schemaVersion": 2,
+  "channelId": "0198f2a0-7b42-7000-8000-000000000201",
+  "type": "ORDER_CREATED",
+  "occurredAt": "2026-01-15T10:05:00Z",
+  "subject": {"orderGuest": {"sourceOrderId": "order-583910"}},
+  "order": {
+    "sourceOrderId": "order-583910",
+    "currency": "EUR",
+    "lines": [{
+      "sourceLineId": "line-1",
+      "skuCustomId": "STYLE-100-BLACK",
+      "quantity": 2,
+      "amounts": {
+        "currency": "EUR",
+        "merchandiseGrossAfterDiscount": "198.00",
+        "merchandiseNetAfterDiscount": "165.00",
+        "tax": "33.00",
+        "discount": "0.00"
+      }
+    }]
+  }
+}
+```
+
+```bash
+curl -sS -X PUT "$IRISPHERA_BASE_URL/merchant/v2/commerce-events/$SOURCE_EVENT_ID" \
+  -H "CHANNEL-API-KEY: $CHANNEL_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data-binary @order-event.json
+```
+
+Choose exactly one trusted subject selector:
+
+- `{"externalIdentity":{"namespace":"<registered customer namespace>","kind":"CUSTOMER","externalId":"customer-123"}}` for a verified customer in a granted domain.
+- `{"shopperId":"<canonical UUID>","identityVersion":1}` from trusted server state; the version must match.
+- `{"orderGuest":{"sourceOrderId":"order-583910"}}` when no verified customer identity exists. This subject is order-scoped, not a cross-order guest identity.
+
+An optional `attribution.attributionRef` correlates browsing with checkout. It is not
+permission to select the order owner, mint a token, or link identities.
+
+Amounts are **line totals**, in charged/presentment currency, as unsigned decimal strings
+with at most four fractional digits. Gross is after merchandise discounts, includes tax,
+and excludes shipping; net excludes tax. Use a matching uppercase currency code. `quantity`
+is explicit; do not repeat SKUs to represent units as in v1. Returns and cancellations
+reference original order/line IDs and affected quantities. Refunds carry their own
+`sourceRefundId`; preserve source sequence/version when available. For a `REFUND`,
+`order.refundAmount` is the total refund in `order.currency`, including non-line
+adjustments. It can accompany affected lines or an empty `lines` array for an amount-only
+refund. Empty lines are allowed only for `REFUND` with both `sourceRefundId` and
+`refundAmount`. Do not add line amounts to that total again or invent quantities for
+shipping-only refunds. Gross reports count one canonical `ORDER_CREATED` per
+merchant/channel/order: the earliest source sequence, then numeric source version,
+then source time and event ID—not the first delivery. `PAYMENT_CAPTURED` is not another
+purchase, and refund money does not automatically reduce gross revenue.
+
+Legacy `POST /shopper/v1/data/order-create`, `/order-cancelled`, and `/return` use
+`{"skuCustomIds":[{"skuCustomId":"STYLE-100-BLACK","price":"99.00 EUR"}]}` with one entry
+per unit. Their `204` acknowledgement is best-effort and not idempotent. Do not dual-write
+the same event to v1 and v2.
+
+## Shopper experiences
+
+The experience routes remain `/shopper/v1` and accept the v2 bearer with live session
+checks. Do not change the SDK's global API version to migrate data collection.
+`GET /shopper/v2/session` supplies `sizingConfig`, `themeConfig`, `flowConfig`, expiry,
+and scopes. Map `shopper:recommendations` to `isApsEnabled` and `shopper:vto` to
+`isVtoEnabled`; these feature scopes depend on merchant quota. Session/event tokens
+also carry `shopper:session` and `shopper:events`.
+
+| Operation | Request / result |
+| --- | --- |
+| Recommendations | `POST /shopper/v1/recommendations`, JSON `{"encodedProfileData":"<base64 JSON>","filters":[]}`; returns `recommendationsByCollection` |
+| VTO readiness | `GET /shopper/v1/stylist-preview/{skuCustomId}`; do not generate when `UNAVAILABLE` |
+| Generate VTO | `POST /shopper/v1/stylist-preview?skuCustomId=STYLE-100-BLACK`, multipart `targetImage`; returns base64 WebP `generatedImage` |
+| 3D asset | `GET /shopper/v1/td-preview/{skuCustomId}`; temporary download URL, do not persist |
+| Body measurements | `POST /shopper/v1/body-measurements`, JSON `{"user_gender":"WOMEN","user_height":170,"img_data_main":"<raw base64>"}`; optional `img_data_side`, results in centimeters |
+| Colors | `POST /shopper/v1/color-extraction`, JSON `{"img_data_main":"<raw base64 selfie>"}` |
+
+Profile Base64 is encoding, not encryption. Obtain consent for photos and avoid retention.
+VTO's optional `isFaceBlurred` query parameter describes client-side blurring; it does not
+request server-side blurring. On `420` or `422`, request a usable photo or offer a product-page fallback.
+Match recommended SKUs to your storefront for price and availability. The current
+recommendation flow applies `filters` but ignores `offset`, `limit`, and `collectionIds`. The VTO-ready-item list route is not implemented; use per-SKU readiness.
+
+## Rollout
+
+### Backend prerequisites
+
+Before enabling a channel, the Octopus operator must:
+
+1. Apply the current Liquibase changelog, including identity, session, credential, and event tables.
+2. Set `irisphera.shopper-identity.enabled=true` and supply `irisphera.service.key`
+   (`IRISPHERA_SERVICE_KEY`) from a secret store.
+3. Configure `irisphera.token.keys.<kid>` with at least 32 bytes of high-entropy key
+   material. The parser uses the value's UTF-8 bytes; it does not Base64-decode it.
+   Align issuer/audience settings. The default token `max-age` is `10m`.
+4. Register the merchant's channel instance, current credential epoch, separate
+   `ANONYMOUS`/`CUSTOMER` domains, and grants for `shopper:session`, `identity:link`,
+   and `events:write` as needed. Merchant creation alone does not provision these.
+5. Test session creation, login, refresh, logout, identical event replay, and conflicting
+   replay in that environment before switching traffic. Keep v1 and v2 delivery mutually exclusive.
+
+Platform privacy handlers erase local adapter state; they do not erase Octopus history.
+There is no merchant-v2 remote-erasure endpoint. Before production, agree an authenticated
+erasure procedure with the Octopus operator: retain local replay fences, submit the
+merchant-scoped erasure request through the approved secure channel, and obtain separate
+confirmation of backend deletion. Do not treat local success as remote completion.
+
+### Shopify
+
+Enable selected shops through server-only `OCTOPUS_COLLECTION_V2_CHANNELS` JSON:
+
+```json
+{
+  "example.myshopify.com": {
+    "channelId": "0198f2a0-7b42-7000-8000-000000000201",
+    "apiKey": "<channel credential from secret store>",
+    "namespace": "<registered CUSTOMER namespace>",
+    "anonymousNamespace": "<registered ANONYMOUS namespace>"
+  }
+}
+```
+
+An absent shop entry keeps the legacy flow; an invalid configured entry fails rather
+than falling back. Supply a dedicated stable `COLLECTION_PRIVACY_HMAC_SECRET` of at
+least 32 characters. Its fingerprint is pinned; a missing or changed key fails closed.
+Run `npx prisma migrate deploy --schema prisma/schema.prisma` and
+`npx prisma generate --schema prisma/schema.prisma` before enabling v2.
+
+For configured shops, `getUserToken` returns `collectionVersion:2` without a bearer.
+The browser then calls signed `POST /apps/irisphera/shopperSession` with
+`{"operation":"resolve","requestId":"<fresh UUIDv7>"}`; subsequent `refresh` or `logout`
+requests carry the returned opaque `handle` and `revision`. An initial request without
+stored state needs a UUIDv7 no more than 15 minutes old (one-minute future clock tolerance).
+Persisted exact retries retain their original request ID. Verify the app-proxy
+signature before using its `logged_in_customer_id`. Shopify strips `Cookie` and
+`Set-Cookie` through app proxies; continuation secrets therefore remain in the app's
+database, indexed by the opaque browser handle. Keep `SHOPIFY_API_SECRET` stable:
+it derives retry-stable initial handles. Browser tokens stay in memory.
+
+Before rollout, test the deployed CDN SDK against the app's memory-only session bridge;
+its required token methods and v2 bearer support must match. Product views, successful
+AJAX cart adds, and native VTO use a session-bound queue: at most 100 events, five delivery
+attempts, and 24-hour retention. It cannot carry events across identity epochs.
+Same-origin AJAX cart change/update/clear also capture removals when the snapshot is
+unambiguous. Carts that bypass `window.fetch` need explicit hooks.
+
+Deploy webhook subscriptions and authorize `read_orders`, `read_returns`, and
+`read_customers`. The adapter sends order creation/cancellation, full-order payment,
+processed-return quantities, and line refunds. `returns/close` is bookkeeping, not
+another return. Individual partial payment captures are not covered.
+
+`CommerceCollectionOutbox` freezes the canonical payload before the first HTTP attempt.
+A bounded drain runs every 30 seconds while the app runs, beyond Shopify's webhook retry
+window. Configuration problems pause delivery; `400`, `409`, `410`, and `422` retain
+terminal rows for intervention. Monitor queue age and retain receipts under your privacy
+policy. Failures before payload creation, such as initial Admin hydration failure, still
+need Shopify retry or source reconciliation. Amount-only refunds use `refundAmount`.
+Customer/shop/order erasure fences persist across reinstall and channel changes until an
+approved operator reset; the separate 24-hour session replay markers do not expire them.
+
+### WordPress / WooCommerce
+
+In the plugin Credentials screen, retain `irisphera_channel_id`, register
+`channel/<id>/anonymous` and `channel/<id>/customer` in Octopus, and save
+`irisphera_channel_credential` with the required session/link/event grants. Registration
+is an operator step, not automatic. Keep the merchant key for catalog operations.
+
+The same-origin `get_irs_token` endpoint is POST-only and returns `no-store` responses.
+Uncached storefront responses establish signed HttpOnly local epoch ownership before
+browser capture and token requests. `irispheraSessionState` becomes channel-bound
+session proof after Octopus session creation; local ownership alone and raw anonymous
+cookies cannot authorize a link. Never cache or replay shopper `Set-Cookie` responses.
+Optional tokens and browsing collection
+require the WP Consent API `statistics` verdict or a CMP adapter through
+`irisphera_optional_tracking_allowed` (default false). Commerce has a separate policy.
+
+Configuration-blocked outbox events pause until credentials are updated; payload or
+identity-link conflicts require manual repair. Existing legacy rows retain an explicit
+v1 delivery path. Before rollout, define successful-row retention and remote identity
+erasure procedures; the plugin's local eraser does not perform Octopus erasure.
+
+### PrestaShop
+
+Upgrade through the native module upgrader to apply the 1.7.2 migrations, including
+the durable privacy-fence tables for existing 1.7.1 installations. Configure
+`IRISPHERA_CHANNEL_ID` and `IRISPHERA_CHANNEL_API_KEY`, register the channel's
+anonymous/customer domains and grants in Octopus, and keep the merchant catalog key
+separate. Use a stable `IRISPHERA_STATE_SECRET` of at least 32 characters or preserve
+PrestaShop's `_COOKIE_KEY_` fallback. Back up the key and database together. Key changes,
+or retained fences without matching key-continuity metadata, stop collection rather
+than silently bypass erasure. Restore a matching backup or migrate the retained
+fences through an approved procedure; do not clear fences to resume delivery.
+
+Optional collection denies access without a consent verdict. A configured consent module
+can implement `irispheraConsentAllows(purpose, context)`; only literal `true` grants the
+purpose. The SDK/token flow requires both analytics and personalization permission.
+Set `IRISPHERA_RETURN_STATE_IDS` to accepted physical-return states; the empty default
+emits no physical returns. An RMA request alone is not a completed return.
+
+Same-origin token POSTs require CSRF protection. Continuations stay in encrypted HttpOnly
+state and tokens stay in memory. Native commerce hooks enqueue snapshots rather than
+sending synchronously. Use the restricted back-office outbox/reconciliation pages for
+blocked deliveries; never replay privacy-blocked or legacy rows as new v2 events.
+Local erasure does not delete Octopus history; an approved remote-erasure procedure is
+a production prerequisite. Native validation covers PrestaShop 8.2.8; test other versions
+and the merchant's consent, return, and storefront flows before activation.
+
+## Errors and retries
+
+Use the HTTP status as the control signal. Most errors use `application/problem+json`;
+some image/validation errors use `{"detail":[...]}`. Log `requestId` or `X-Request-Id`
+without credentials or identity payloads.
+
+Persist each event's UUID, `occurredAt`, subject-at-capture, and complete payload before
+sending. Retry the same source event ID and unchanged content; never rebuild a retry from
+current catalog/customer state or replay an old browser event under a different identity.
+V2 event PUTs return `201` for durable acceptance, `200` for an identical replay, and `409`
+for conflicting content under the same merchant/channel/source-event key.
+
+For session creation and refresh, use a UUID `Idempotency-Key` per logical operation.
+Persist it with the request before sending. Exact retries reuse the active session and
+response; a changed request under the same key conflicts. Use a new key for a later
+refresh or new session, not for a retry. Do not replay a session after logout to restore it.
+
+| Response | Action |
+| --- | --- |
+| Network failure, `429`, `5xx` | Use bounded attempts per run, backoff, jitter, and `Retry-After`; durable commerce outboxes retain future retries. Preserve key and payload. |
+| `401` / `403` | Revalidate session, credential, scopes, and domain grants. Do not fall back to legacy or change the event owner. |
+| `409` | Investigate the existing operation or identity link; do not hide a conflict with a new random ID. |
+| `410` | Stop delivery for the erased identity; do not recreate or reactivate it. |
+| `400` / `422` | Fix validation or transition errors; retain server events for review rather than repeatedly resending them. |
+| `402` on legacy merchant routes | Check subscription quota. |
+
+A successful data-collection response is not a catalog processing receipt or a complete
+financial reconciliation. Keep authoritative commerce records and monitor your outbox;
+bounded browser retries are best-effort, not a durable commerce delivery mechanism.
