@@ -6,7 +6,7 @@ Previous: [Collect activity and orders](05-collect-data.md) · [Call agenda](../
 
 ## Request the reporting period
 
-Use the **merchant key**, not the channel key or shopper token. `REPORT_START` was captured in step 1; capture the end after the last event was accepted. The period is `[startTime,endTime)`, with an inclusive start and exclusive end. `zone` controls calendar-day grouping.
+Use the **merchant key**, not the integrator key or shopper token. `REPORT_START` was captured in step 1; capture the end after the last event was accepted. The period is `[startTime,endTime)`, with an inclusive start and exclusive end. `zone` controls calendar-day grouping.
 
 ```bash
 REPORT_END=$(now)
@@ -80,4 +80,4 @@ Confirm that the enterprise can point to:
 
 Before production, complete the [privacy acceptance scenarios](07-privacy-and-consent.md#acceptance-scenarios-before-enterprise-activation). Use the documented privacy-request workflow for shopper data requests; revoking a session or deleting local integration state does not erase server or provider data. Remove the private demo directory and photos according to the agreed retention policy; do not commit or screen-share its secret files. Confirm downstream request completion separately.
 
-**Finish:** the enterprise has followed the API flow from integrator credentials to a saved report, with manual provisioning requirements and reporting limits visible rather than hidden.
+**Finish:** the enterprise has followed the API flow from integrator credentials through merchant-backed collection to a saved report, with reporting limits visible rather than hidden.

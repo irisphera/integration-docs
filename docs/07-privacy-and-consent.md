@@ -30,15 +30,15 @@ Until permission is known and acknowledged, keep optional capture, persistence, 
 | Caller | Endpoint | Credential |
 | --- | --- | --- |
 | Shopper | `GET` / `PUT /shopper/v2/privacy/preferences` | Shopper bearer for the current merchant/channel/session |
-| Trusted storefront backend | `GET` / `PUT /merchant/v2/shopper-sessions/{sessionId}/privacy-preferences` | Channel credential; keep it server-side |
+| Trusted storefront backend | `GET` / `PUT /merchant/v2/shopper-sessions/{sessionId}/privacy-preferences` | Merchant key; keep it server-side; use captured `X-Irisphera-Channel-Id` for historical sessions |
 
 1. Read the current preferences and version.
 2. Submit the three explicit choices with notice version `2026-09-06` and the current `expectedVersion`, using the request schema from the deployed API contract. A missing preference record has version `0` and all purposes denied.
-3. Wait for server acknowledgment before starting optional processing. A grant requires a positive acknowledged version and an unexpired expiry time; a pending request or local checkbox alone is insufficient.
+3. Wait for server acknowledgment before starting optional processing. A grant requires a positive acknowledged version and the relevant purpose set to `true`. A timestamp in `expiresAt` must be in the future; `expiresAt: null` on an acknowledged grant means no scheduled expiry, not implicit consent. A pending request, missing version-zero record or local checkbox alone is insufficient.
 4. On `409`, reread the preferences. Do not overwrite a newer withdrawal with a stale choice.
 5. Apply the merchant's consent-management platform (CMP) restrictions as well. Server acknowledgment does not override a host refusal.
 
-Derive the session from authenticated server state. Never let a browser-selected customer or subject identify the target of a privileged preference update. Confirm purpose availability and consent validity with Irisphera during channel provisioning; do not bypass a denied or unavailable purpose to complete a demo.
+Derive the session from authenticated server state. Never let a browser-selected customer or subject identify the target of a privileged preference update. Confirm purpose availability and consent validity with Irisphera before activation; collection context alone grants no consent. Do not bypass a denied or unavailable purpose to complete a demo.
 
 ### Withdrawal, retries and identity changes
 
@@ -77,7 +77,7 @@ Upload only catalog content the merchant is authorized to provide, and keep shop
 
 Agree a monitored contact and identity-verification procedure with the merchant and Irisphera before launch.
 
-The trusted backend uses the channel-authenticated workflow:
+The trusted backend uses the merchant-authenticated workflow. For an order-guest selector, retain the captured `X-Irisphera-Channel-Id`; identity selectors remain merchant-scoped:
 
 1. Submit `POST /merchant/v2/privacy/requests` with the request kind and authorized subject selector defined in the deployed contract.
 2. Keep the same `requestId` and body for an exact retry. Reusing an identifier with different content is a conflict.

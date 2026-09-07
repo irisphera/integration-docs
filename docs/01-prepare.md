@@ -7,7 +7,7 @@
 ## Arrange before the call
 
 - Irisphera supplies the environment URL and integrator API key. Confirm that this environment supports the v2 session and event APIs, has active catalog workers, and has virtual try-on quota and providers available.
-- Have Irisphera available to provision a channel for the merchant created in step 2. **The public API does not provision channels or their credentials.** Merchant creation alone is not enough to run steps 4–5.
+- Merchant creation or an existing merchant key is enough to resolve collection context in step 2. No channel credential, identity-administrator credential, or manual namespace handoff is needed.
 - Use the same registered channel and catalog SKU throughout. If platform product identifiers differ, arrange canonical SKU aliases with Irisphera; feed upload does not create aliases and there is no public product-alias management API.
 - Prepare one real garment: front and back still-life image URLs, its product-page URL, and a consenting participant's JPEG or PNG portrait on the demo machine. The image URLs must remain reachable by Irisphera during processing. Check suitability with Irisphera before the call.
 - Use a test merchant and test checkout/customer records. This walkthrough records a two-unit purchase and a one-unit return; it does not charge a card or execute a refund in your commerce platform.
@@ -41,6 +41,7 @@ Use HTTPS for the approved remote environment. These terminal calls stand in for
 ```bash
 curl --fail-with-body -sS "$IRISPHERA_BASE_URL/v3/api-docs" -o openapi.json
 jq -e '.paths["/integrator/v1/merchant"].post
+  and .paths["/merchant/v2/collection-context"].post
   and .paths["/merchant/v2/shopper-sessions"].post
   and .paths["/merchant/v2/commerce-events/{sourceEventId}"].put
   and .paths["/merchant/v1/report"].post' openapi.json >/dev/null
@@ -48,4 +49,4 @@ jq -e '.paths["/integrator/v1/merchant"].post
 
 If API documentation is not exposed publicly, obtain the deployed contract from Irisphera instead. Do not assume that an older environment has the endpoints in this guide.
 
-**Checkpoint:** environment and integrator key ready; demo assets prepared; Irisphera's channel-provisioning handoff agreed. Keep this terminal open and continue to [step 2](02-create-merchant.md).
+**Checkpoint:** environment and integrator key ready; demo assets prepared. Keep this terminal open and continue to [step 2](02-create-merchant.md).

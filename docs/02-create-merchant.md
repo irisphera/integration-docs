@@ -2,7 +2,7 @@
 
 Previous: [Prepare](01-prepare.md) · [Call agenda](../README.md) · Next: [Upload a feed](03-upload-feed.md)
 
-**Goal:** create the enterprise's merchant account, retain its ID and merchant API key, and arrange its storefront channel.
+**Goal:** create the enterprise's merchant account, retain its ID and merchant API key, and resolve its collection context.
 
 ## Create the merchant with your integrator key
 
@@ -25,28 +25,23 @@ jq '{id,name}' merchant.json
 
 For a transport retry, resend **the saved request**, not a newly generated key/name. A key already owned by your integrator returns its existing merchant; an existing name can update that merchant. The unique demo name avoids modifying an earlier demo.
 
-## Obtain the storefront channel from Irisphera
+## Resolve collection context with the merchant key
 
-Give Irisphera `MERCHANT_ID` and the intended storefront. Irisphera must supply:
-
-| Value | Purpose |
-| --- | --- |
-| Channel UUID | Identifies this merchant's storefront/integration channel |
-| Channel API key | Server-side session creation and event delivery |
-| Anonymous namespace | Registered identity domain for this storefront's anonymous visitors |
-| Customer namespace | Registered identity domain for your verified customer IDs |
-
-Ask for the channel credential and domain grants needed for `shopper:session`, `identity:link`, and `events:write`, and shopper access to the experience used in step 4. Confirm merchant quotas as part of this handoff. Do not invent namespace strings: both namespaces must be registered to this merchant and granted to the channel.
-
-**There is no public channel-provisioning endpoint in the current contract.** This is an operator handoff, not another call using the integrator key. A separate identity-admin key is not needed for this demo's anonymous-to-customer login flow.
-
-Enter the supplied values when available; you can upload the feed while the handoff is in progress:
+An existing merchant registration is sufficient. The backend initializes its channel and registered identity namespaces on first use; repeated calls return the same context. No additional credentials or manual channel registration are needed.
 
 ```bash
-read -rp 'Channel UUID: ' CHANNEL_ID
-read -rsp 'Channel API key: ' CHANNEL_API_KEY; printf '\n'
-read -rp 'Anonymous namespace: ' ANONYMOUS_NAMESPACE
-read -rp 'Customer namespace: ' CUSTOMER_NAMESPACE
+curl --fail-with-body -sS -X POST "$IRISPHERA_BASE_URL/merchant/v2/collection-context" \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" -o collection-context.json
+CHANNEL_ID=$(jq -er '.channelId' collection-context.json)
+ANONYMOUS_NAMESPACE=$(jq -er '.anonymousNamespace' collection-context.json)
+CUSTOMER_NAMESPACE=$(jq -er '.namespace' collection-context.json)
+jq '{channelId,collectionMode,comparisonStartsAt,comparisonEndsAt}' collection-context.json
 ```
 
-**Checkpoint:** `MERCHANT_ID` and `MERCHANT_API_KEY` are available; channel provisioning is complete before step 4. Continue to [step 3](03-upload-feed.md).
+Use the returned namespaces rather than inventing them. Keep the context with captured work. For an existing historical channel, send its `X-Irisphera-Channel-Id` with the merchant key; Octopus checks ownership and active grants rather than moving the data to the default channel. The header is routing context, not authentication.
+
+Collection mode starts as `dual` for one UTC calendar month, then returns to `legacy` pending comparison review. Both report families remain supported. Context initialization does not grant shopper consent or change merchant quotas.
+
+For WordPress and PrestaShop, Irisphera acts as integrator and supplies the merchant key. Merchants enter only that key in the installed plugin; the plugin resolves context itself. No integrator key belongs in either plugin. Shopify's hosted backend uses an integrator key to manage its merchants.
+
+**Checkpoint:** `MERCHANT_ID`, `MERCHANT_API_KEY`, and the returned collection context are available. Continue to [step 3](03-upload-feed.md).

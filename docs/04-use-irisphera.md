@@ -20,7 +20,8 @@ jq -n --arg channel "$CHANNEL_ID" --arg ns "$ANONYMOUS_NAMESPACE" \
   '{channelId:$channel,currentIdentity:{namespace:$ns,kind:"ANONYMOUS",externalId:$anonymous}}' \
   > anonymous-session-request.json
 curl --fail-with-body -sS "$IRISPHERA_BASE_URL/merchant/v2/shopper-sessions" \
-  -H "CHANNEL-API-KEY: $CHANNEL_API_KEY" -H 'Content-Type: application/json' \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" -H 'Content-Type: application/json' \
+  -H "X-Irisphera-Channel-Id: $CHANNEL_ID" \
   -H "Idempotency-Key: $SESSION_OPERATION_ID" \
   --data-binary @anonymous-session-request.json -o anonymous-session.json
 ANONYMOUS_SESSION_ID=$(jq -er '.sessionId' anonymous-session.json)
@@ -45,7 +46,8 @@ jq -n --arg channel "$CHANNEL_ID" --arg ns "$CUSTOMER_NAMESPACE" \
     previousAnonymousSession:{sessionId:$session,anonymousContinuation:$proof}}' \
   > login-request.json
 curl --fail-with-body -sS "$IRISPHERA_BASE_URL/merchant/v2/shopper-sessions" \
-  -H "CHANNEL-API-KEY: $CHANNEL_API_KEY" -H 'Content-Type: application/json' \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" -H 'Content-Type: application/json' \
+  -H "X-Irisphera-Channel-Id: $CHANNEL_ID" \
   -H "Idempotency-Key: $LOGIN_OPERATION_ID" \
   --data-binary @login-request.json -o customer-session.json
 ACTIVE_SESSION_ID=$(jq -er '.sessionId' customer-session.json)
@@ -98,7 +100,8 @@ After your backend revalidates the same platform login, refresh this session and
 REFRESH_OPERATION_ID=$(uuid)
 curl --fail-with-body -sS -X POST \
   "$IRISPHERA_BASE_URL/merchant/v2/shopper-sessions/$ACTIVE_SESSION_ID/access-tokens" \
-  -H "CHANNEL-API-KEY: $CHANNEL_API_KEY" -H "Idempotency-Key: $REFRESH_OPERATION_ID" \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" -H "Idempotency-Key: $REFRESH_OPERATION_ID" \
+  -H "X-Irisphera-Channel-Id: $CHANNEL_ID" \
   -o refreshed-token.json
 ACCESS_TOKEN=$(jq -er '.token' refreshed-token.json)
 ```

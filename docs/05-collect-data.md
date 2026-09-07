@@ -59,7 +59,8 @@ The demo order contains two units at EUR 99 each. Amounts are **totals for the l
 ```bash
 send_commerce() {
   curl --fail-with-body -sS -X PUT "$IRISPHERA_BASE_URL/merchant/v2/commerce-events/$1" \
-    -H "CHANNEL-API-KEY: $CHANNEL_API_KEY" -H 'Content-Type: application/json' \
+    -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" -H 'Content-Type: application/json' \
+    -H "X-Irisphera-Channel-Id: $CHANNEL_ID" \
     --data-binary "@$1.json" -o "$1-receipt.json" -w 'HTTP %{http_code}\n'
   jq '{receivedAt}' "$1-receipt.json"
 }
@@ -135,7 +136,7 @@ A `201` receipt proves durable acceptance, not that a contradictory lifecycle ev
 | `400` / `422` | Correct the producer; retain failed server events for review |
 | `410` | Stop delivery for the erased identity; do not recreate it |
 
-Keep queued browser events bound to their capture session; never replay one shopper's pending activity under another shopper's token. For server-delivered observations, use `PUT /merchant/v2/interaction-events/{sourceEventId}` with the channel key and a server-captured `subject`, not a newly minted browser bearer. Do not dual-write these events through legacy `/shopper/v1/data/*` routes.
+Keep queued browser events bound to their capture session; never replay one shopper's pending activity under another shopper's token. For server-delivered observations, use `PUT /merchant/v2/interaction-events/{sourceEventId}` with the merchant key, captured `X-Irisphera-Channel-Id`, and a server-captured `subject`, not a newly minted browser bearer. This walkthrough uses v2 events. Production integrations retain independent legacy/v2 delivery outcomes during the comparison window; do not fall back or replay already accepted events when one target fails.
 
 ## End the shopper session
 
