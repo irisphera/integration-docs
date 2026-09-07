@@ -42,6 +42,8 @@ On an ordinary page visit, read the merchant CMP and acknowledge eligible analyt
 
 Derive the session from authenticated server state. Never let a browser-selected customer or subject identify the target of a privileged preference update. Confirm purpose availability and consent validity with Irisphera before activation; collection context alone grants no consent. Do not bypass a denied or unavailable purpose to complete a demo.
 
+Shopper access tokens last 30 minutes by default. Browser expiry and revocation remain enforced, but they do not end an acknowledged merchant consent grant. The trusted backend can read current preferences and propagate restrictions using the captured scope after browser expiry or session-row cleanup. It cannot use that historical scope to enable another purpose, add a legacy identity or renew consent expiry. Refusal and withdrawal remain effective independently of age-based deletion settings.
+
 ### Withdrawal, retries and identity changes
 
 - Check permission before capture and again before delivery, including outbox retries.
@@ -83,7 +85,7 @@ The trusted backend uses the merchant-authenticated workflow. For an order-guest
 
 1. Submit `POST /merchant/v2/privacy/requests` with the request kind and authorized subject selector defined in the deployed contract.
 2. Keep the same `requestId` and body for an exact retry. Reusing an identifier with different content is a conflict.
-3. Poll `GET /merchant/v2/privacy/requests/{requestId}` and inspect the per-system status.
+3. Poll `GET /merchant/v2/privacy/requests/{requestId}` with the same captured `X-Irisphera-Channel-Id` for guest requests, and inspect the per-system status. Keep separate targets when the same source order ID exists in different channels; never substitute the current installation's channel.
 4. Report completion only when the workflow confirms it. An accepted request or `202` response represents pending work, not completed erasure.
 
 Keep the credentials and delivery workers needed to complete pending requests. Do not remove them during uninstall or disconnect while downstream work remains outstanding. Coordinate applicable retention exceptions and provider handling with Irisphera.

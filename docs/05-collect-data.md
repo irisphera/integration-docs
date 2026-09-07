@@ -84,9 +84,11 @@ In production, use the platform's real order/line IDs, quantity, currency, and l
 `subject` above is the server-held identity returned in step 4, not an ID copied from a cart. Other orders can use exactly one of:
 
 - `{"externalIdentity":{"namespace":"<registered customer namespace>","kind":"CUSTOMER","externalId":"<verified platform customer ID>"}}`, asserted by an authorized backend/domain grant.
-- `{"orderGuest":{"sourceOrderId":"<the same order ID as order.sourceOrderId>"}}` for a genuinely unidentified guest order. This records the sale but does not itself join browsing history to that guest.
+- `{"orderGuest":{"sourceOrderId":"<the same order ID as order.sourceOrderId>"}}` for a genuinely unidentified guest order. Its first event also requires top-level `consentEvidence: {"sessionId":"<captured session UUID>","version":<acknowledged positive version>}`. Capture this evidence from authenticated backend state after the privacy API acknowledges analytics; retain it with the order. Missing, stale, wrong-channel or unacknowledged evidence cannot create a guest. This consent relationship does not join browsing identities.
 
 An optional `attribution.attributionRef` may carry the opaque reference returned by a session for cart correlation. It is never proof of customer identity, permission to link accounts, or an alternative to `subject`.
+
+For a bound guest, later lifecycle events may omit `consentEvidence`; an exact replay must retain the original body. Supplied evidence cannot change the consent source. Current analytics permission, consent expiry, withdrawal, capture-time boundaries and erasure still apply after browser-session expiry. Send this field only for merchant commerce with `orderGuest`, never for other subjects or browser/interaction observations.
 
 ## Record payment, one returned unit, and its refund
 
