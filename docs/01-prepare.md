@@ -44,7 +44,8 @@ jq -e '.paths["/integrator/v1/merchant"].post
   and .paths["/merchant/v2/collection-context"].post
   and .paths["/merchant/v2/shopper-sessions"].post
   and .paths["/merchant/v2/commerce-events/{sourceEventId}"].put
-  and .paths["/merchant/v1/report"].post' openapi.json >/dev/null
+  and .paths["/merchant/v1/report"].post
+  and .paths["/merchant/v2/report"].post' openapi.json >/dev/null
 ```
 
 If API documentation is not exposed publicly, obtain the deployed contract from Irisphera instead. Do not assume that an older environment has the endpoints in this guide.

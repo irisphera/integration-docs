@@ -11,7 +11,7 @@ Wire shopper choices, consent-aware delivery and data requests alongside the [si
 - Treat photos, measurements, shopper identifiers and linked order history as personal data. Do not promise browser-only processing or immediate deletion.
 - Keep optional behavioral analytics/attribution, saved personalization and QA session recording separate. Use the merchant CMP's current permission for analytics; do not require a second Irisphera opt-in for that same purpose. A merchant credential, login, order webhook or terms acceptance is not permission.
 
-## Connect shopper choices
+## Connect v2 shopper choices
 
 Keep the three optional purposes separate:
 
@@ -52,7 +52,7 @@ Shopper access tokens last 30 minutes by default. Browser expiry and revocation 
 - Re-evaluate permission after login, logout or account switching. Do not transfer one shopper's choice or history to another shopper.
 - Keep consent withdrawal, session revocation and a data-erasure request as separate actions.
 
-## Platform wiring
+## V2 platform wiring
 
 - **Shopify:** use the Customer Privacy API's current analytics and marketing allowances to acknowledge analytics on ordinary visits. Do not change Shopify's tracking consent automatically. Unknown host permission remains denied; personalization and QA remain separate choices. Revalidate bounded session continuation after navigation and apply withdrawal to browser capture and server delivery.
 - **WordPress/WooCommerce:** connect the merchant CMP through the plugin's consent adapter. Apply withdrawal to the storefront bridge and queued deliveries. Use the plugin's privacy export/erase hooks and track pending downstream work.
@@ -63,11 +63,11 @@ Use the relevant platform integration's configuration instructions for its adapt
 
 ## Legacy/v2 overlap and reports
 
-Both supported collection generations and both report families remain available. Apply the same purpose restrictions to legacy and v2 delivery. Use `dual` only for the agreed comparison window; refusal or withdrawal must stop affected delivery to both targets.
+Both supported collection generations and both report families remain available. Independent legacy v1 collection and reporting do not depend on the v2 consent ledger. V2 capture, delivery, retries and reports enforce the purpose restrictions described above; refusal or withdrawal stops affected v2 processing. Use `dual` only for the agreed comparison window. Keep source selection explicit: a rejected v2 event must not be redirected to legacy as a fallback. These API rules do not replace the merchant's legal obligations for either version.
 
 Preserve collection provenance independently of payload schema version. Retain per-target delivery outcomes so a failed v2 request does not cause an already accepted legacy event to be replayed.
 
-Reports describe the population actually collected with permission. Do not label an opt-in cohort as all visitors, fabricate denied events or interpret missing activity as zero. Identity linking and reporting do not grant permission to collect additional history.
+V1 reports describe stored legacy activity without requiring retroactive v2 consent records. V2 reports describe only activity eligible under v2 consent checks, including eligible historical v2 events. The populations can differ: do not label a v2 opt-in cohort as all visitors, fabricate denied events, or sum both reports as unique activity. Identity linking and reporting do not grant permission to collect additional history.
 
 ## Photo and recording handling
 
@@ -94,12 +94,12 @@ Keep the credentials and delivery workers needed to complete pending requests. D
 
 ## Acceptance scenarios before enterprise activation
 
-Exercise the integration with synthetic shoppers and an isolated test merchant:
+Exercise the v2 integration with synthetic shoppers and an isolated test merchant. Separately verify that configured v1 delivery remains independent and that v2 denial never creates a legacy fallback:
 
 1. **Fresh visitor:** no optional capture, persistence, recording or delivery before a choice is acknowledged.
 2. **Reject and reload:** rejection persists; ordinary checkout remains usable; preferences can be reopened.
 3. **Separate purposes:** enabling one purpose does not enable the other two.
-4. **Withdraw during queued work:** affected capture and delivery stop, including retries to legacy and v2; delayed responses cannot restore permission.
+4. **Withdraw during queued work:** affected v2 capture and delivery stop, including retries; delayed responses cannot restore permission. Independent v1 delivery retains its own outcome and must not be replayed.
 5. **Multiple tabs and account switching:** stale contexts cannot continue under revoked permission or another shopper's identity.
 6. **Invalid or conflicting preferences:** expired/malformed permission stays denied; a `409` is handled without overwriting a newer withdrawal.
 7. **Recording exclusions:** synthetic private markers do not appear in captured content.

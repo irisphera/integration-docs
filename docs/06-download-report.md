@@ -8,14 +8,16 @@ Previous: [Collect activity and orders](05-collect-data.md) · [Call agenda](../
 
 Use the **merchant key**, not the integrator key or shopper token. `REPORT_START` was captured in step 1; capture the end after the last event was accepted. The period is `[startTime,endTime)`, with an inclusive start and exclusive end. `zone` controls calendar-day grouping.
 
+This demo collects v2 activity, so request `/merchant/v2/report`. `/merchant/v1/report` remains supported for legacy collection; it is not an older output format for the same data. Download each source separately during the overlap period and check `collectionSource`. Do not add the two reports together: the same storefront action can be delivered to both collection routes.
+
 ```bash
 REPORT_END=$(now)
 jq -n --arg start "$REPORT_START" --arg end "$REPORT_END" \
   '{startTime:$start,endTime:$end,zone:"UTC"}' > report-request.json
-curl --fail-with-body -sS "$IRISPHERA_BASE_URL/merchant/v1/report" \
+curl --fail-with-body -sS "$IRISPHERA_BASE_URL/merchant/v2/report" \
   -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" -H 'Content-Type: application/json' \
   --data-binary @report-request.json -o report.json
-jq '{organizationName,reportingPeriod,resolutionMode,identityProjectionVersion,
+jq '{organizationName,reportingPeriod,collectionSource,resolutionMode,identityProjectionVersion,
   purchasedUnits,averageOrderValue,
   activity:[.timeseries[] | {date,numberOfProductViews,numberOfAddToCarts,
     numberOfOrders,numberOfReturns,numberOfVirtualTryOns}]}' report.json
