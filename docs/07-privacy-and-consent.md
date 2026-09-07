@@ -9,7 +9,7 @@ Wire shopper choices, consent-aware delivery and data requests alongside the [si
 - Agree the permitted processing, merchant/Irisphera responsibilities, applicable agreements, notices, recipients, retention and support contacts before sending shopper data.
 - Explain photo uploads and server/provider processing before a participant uses try-on or sizing. Use consenting participants and test identities for the walkthrough.
 - Treat photos, measurements, shopper identifiers and linked order history as personal data. Do not promise browser-only processing or immediate deletion.
-- Obtain separate choices for optional behavioral analytics/attribution, saved personalization and QA session recording. A merchant credential, login, order webhook or terms acceptance is not permission for those purposes.
+- Keep optional behavioral analytics/attribution, saved personalization and QA session recording separate. Use the merchant CMP's current permission for analytics; do not require a second Irisphera opt-in for that same purpose. A merchant credential, login, order webhook or terms acceptance is not permission.
 
 ## Connect shopper choices
 
@@ -25,6 +25,8 @@ A requested try-on or sizing operation does not enable optional purposes. Refusa
 
 Until permission is known and acknowledged, keep optional capture, persistence, recorder loading and delivery off. A missing, malformed, expired or incompatible preference is not a grant.
 
+On an ordinary page visit, read the merchant CMP and acknowledge eligible analytics permission through the preference API below. Do not wait for the shopper to open try-on or sizing. Keep personalization and QA recording off unless separately chosen. If no supported CMP supplies permission, retain the explicit consent flow. Never replace a recorded refusal, withdrawal, expired choice or identity-reset restriction with an automatic grant.
+
 ### Authoritative preference API
 
 | Caller | Endpoint | Credential |
@@ -33,7 +35,7 @@ Until permission is known and acknowledged, keep optional capture, persistence, 
 | Trusted storefront backend | `GET` / `PUT /merchant/v2/shopper-sessions/{sessionId}/privacy-preferences` | Merchant key; keep it server-side; use captured `X-Irisphera-Channel-Id` for historical sessions |
 
 1. Read the current preferences and version.
-2. Submit the three explicit choices with notice version `2026-09-06` and the current `expectedVersion`, using the request schema from the deployed API contract. A missing preference record has version `0` and all purposes denied.
+2. Submit the three purpose values with notice version `2026-09-06` and the current `expectedVersion`, using the request schema from the deployed API contract. Analytics may come from the merchant CMP; personalization and QA require their separate choices. A missing preference record has version `0` and all purposes denied until acknowledgment.
 3. Wait for server acknowledgment before starting optional processing. A grant requires a positive acknowledged version and the relevant purpose set to `true`. A timestamp in `expiresAt` must be in the future; `expiresAt: null` on an acknowledged grant means no scheduled expiry, not implicit consent. A pending request, missing version-zero record or local checkbox alone is insufficient.
 4. On `409`, reread the preferences. Do not overwrite a newer withdrawal with a stale choice.
 5. Apply the merchant's consent-management platform (CMP) restrictions as well. Server acknowledgment does not override a host refusal.
@@ -50,7 +52,7 @@ Derive the session from authenticated server state. Never let a browser-selected
 
 ## Platform wiring
 
-- **Shopify:** combine Customer Privacy API restrictions and change events with Irisphera purpose choices. Unknown host permission remains denied. Apply changes to browser capture and server delivery.
+- **Shopify:** use the Customer Privacy API's current analytics and marketing allowances to acknowledge analytics on ordinary visits. Do not change Shopify's tracking consent automatically. Unknown host permission remains denied; personalization and QA remain separate choices. Revalidate bounded session continuation after navigation and apply withdrawal to browser capture and server delivery.
 - **WordPress/WooCommerce:** connect the merchant CMP through the plugin's consent adapter. Apply withdrawal to the storefront bridge and queued deliveries. Use the plugin's privacy export/erase hooks and track pending downstream work.
 - **PrestaShop:** connect the configured CMP adapter to actual consent-change events. Apply choices to guest and authenticated sessions, browser capture and server queues. Merchant configuration must not bypass shopper refusal.
 - **Custom API / browser SDK:** enforce choices in the host, participating iframe and trusted backend, not only in the preference dialog.
