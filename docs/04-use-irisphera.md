@@ -6,6 +6,8 @@ Previous: [Upload a feed](03-upload-feed.md) · [Call agenda](../README.md) · N
 
 The experience API remains `/shopper/v1`; it accepts the v2 session bearer token. Do not change every API path to v2.
 
+**Privacy precondition:** the terminal bypasses a storefront consent UI; it does not bypass privacy requirements. Complete the [purpose and permission checks](07-privacy-and-consent.md) before creating an optional tracking session, linking history or uploading a person's photo. A bearer scope or verified login proves authorization, not consent to analytics, recording or reuse. Explain that this route records its own VTO outcome; do not promise an analytics-free feature until core outcome processing and optional reporting are separated and approved.
+
 ## Start an anonymous session from your backend
 
 In production, retain a random anonymous ID in server-controlled storefront-session state. It identifies this browsing epoch, not a device fingerprint or email address.

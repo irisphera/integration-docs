@@ -4,6 +4,8 @@ A step-by-step implementation demo for an enterprise integration call. Follow on
 
 This is a hands-on API walkthrough, not an endpoint catalog or a platform-plugin installation guide. Each step gives the request, the values to retain, and a checkpoint before continuing.
 
+Before using real shopper data, follow the [privacy and consent integration requirements](docs/07-privacy-and-consent.md) and agree the merchant's processing instructions, notices, retention and support contacts with Irisphera.
+
 ## Follow these six steps
 
 | Step | What you do | What you can show |
@@ -24,6 +26,6 @@ Run the commands in order in the same Bash terminal. IDs and credentials returne
 - Use the same registered channel and catalog SKU for VTO, observations, and order lines. If platform identifiers differ, arrange their canonical SKU mapping before the call; uploading a feed does not create aliases.
 - Bring real garment image URLs and a consented shopper photo. Sign in before the demo VTO so the VTO and order use the same customer session.
 
-The guide describes the checked-in Octopus contract and implementation. Confirm the deployed environment before the call; the commands are not a claim of verified production availability. Full endpoint schemas remain in that environment's `/v3/api-docs` rather than being duplicated here.
+Confirm the API version and available features with Irisphera for your environment. Full endpoint schemas are available in that environment's `/v3/api-docs`; this walkthrough does not duplicate them.
 
 Start with [1. Prepare the demo](docs/01-prepare.md).

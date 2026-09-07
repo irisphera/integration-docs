@@ -66,6 +66,8 @@ If the captured or canonical product keys differ, the purchase still appears in 
 
 The return and EUR 99 refund **do not change the original two Purchased Units or net EUR 99 out of gross purchase reporting**. Refunds and payment captures are recorded commerce facts, not additional purchase/return ranking events. This report is not a net-sales, cash-settlement, or refund-reconciliation ledger. Currencies remain separate; attribution is observational, not proof of incremental revenue caused by Irisphera. `users` profile distributions may be empty because this demo does not request recommendations.
 
+Describe the report's permitted collection population and consent-related coverage limits. Do not describe an opt-in cohort as all visitors, manufacture denied events, or infer missing activity is zero. Reporting and identity resolution do not supply a legal basis for the underlying collection; see [legacy/v2 privacy requirements](07-privacy-and-consent.md#legacyv2-overlap-and-reports).
+
 ## Close the call
 
 Confirm that the enterprise can point to:
@@ -76,6 +78,6 @@ Confirm that the enterprise can point to:
 4. Its storefront hooks, server-side order/lifecycle hooks, and durable retry storage.
 5. The downloaded report and reconciled demo counts.
 
-Before production, agree photo/data consent and retention, credential handling, and the remote erasure procedure with Irisphera. Deleting local integration state is not proof of deletion in Irisphera; the current public merchant-v2 API has no erasure endpoint. Remove the private demo directory and photos according to the agreed retention policy; do not commit or screen-share its secret files.
+Before production, complete the [privacy acceptance scenarios](07-privacy-and-consent.md#acceptance-scenarios-before-enterprise-activation). Use the documented privacy-request workflow for shopper data requests; revoking a session or deleting local integration state does not erase server or provider data. Remove the private demo directory and photos according to the agreed retention policy; do not commit or screen-share its secret files. Confirm downstream request completion separately.
 
 **Finish:** the enterprise has followed the API flow from integrator credentials to a saved report, with manual provisioning requirements and reporting limits visible rather than hidden.

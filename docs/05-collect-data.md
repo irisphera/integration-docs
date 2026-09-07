@@ -6,9 +6,11 @@ Previous: [Use Irisphera](04-use-irisphera.md) · [Call agenda](../README.md) ·
 
 The terminal below demonstrates the requests your integration must send. In production, call them from the hooks in this table—not from a timer, page reload, or client-supplied order body.
 
+**Production privacy gate:** apply the [approved purpose/consent requirements](07-privacy-and-consent.md) before capture and again before delivery, including retries and legacy/v2 comparison targets. The examples use an authorized test participant and test order. Neither endpoint acceptance nor report completeness grants permission to collect a real shopper's behavior. Unknown or declined optional permission must not become a legacy fallback.
+
 | Trigger | What to send | Who sends it |
 | --- | --- | --- |
-| Product page displayed | `PRODUCT_VIEWED` | Shopper bearer; every visitor, not only Irisphera users |
+| Product page displayed | `PRODUCT_VIEWED`, when permitted for the approved purpose | Shopper bearer; eligible visitors, whether or not they use Irisphera features |
 | Cart mutation succeeds | `ADD_TO_CART` or `REMOVE_FROM_CART` for each affected catalog SKU | Shopper bearer |
 | VTO attempt | Step 4's endpoint records its own success/failure/bad-input event | Irisphera; do not duplicate it |
 | Platform accepts an order | `ORDER_CREATED`, all lines and charged amounts | Trusted backend |
@@ -17,7 +19,7 @@ The terminal below demonstrates the requests your integration must send. In prod
 | Physical return confirmed | `ORDER_RETURNED`, original order/line IDs and affected quantities | Trusted backend |
 | Refund confirmed | `REFUND`, refund ID, total and known line allocations | Trusted backend |
 
-Collect commerce facts for **all orders**, including shoppers who never used Irisphera; otherwise the report's comparison population is incomplete. These APIs record what happened elsewhere. They do not perform checkout, capture money, cancel orders, or refund a payment.
+For the approved reporting population, collect permitted commerce facts consistently, including eligible orders from shoppers who never used Irisphera. Do not extend collection to refused or otherwise unauthorized processing merely to fill the comparison population. Document coverage and selection bias; a merchant's checkout/accounting duty does not automatically justify identified Irisphera analytics. These APIs record what happened elsewhere. They do not perform checkout, capture money, cancel orders, or refund a payment.
 
 ## Record the page view and cart addition
 
@@ -144,5 +146,7 @@ unset ACCESS_TOKEN ANONYMOUS_CONTINUATION
 ```
 
 **Expected:** `204`. Clear browser tokens and server continuation/session state; a later visit starts a fresh anonymous epoch. Refresh requires a revalidated unchanged login; account switching requires a new session.
+
+Session revocation is not consent withdrawal for every purpose or erasure of historical data. Stop affected optional capture and queues through the actual consent integration, and use the agreed [rights and deletion workflow](07-privacy-and-consent.md#data-requests-and-deletion) for retained data. Do not acknowledge erasure based only on this `204`.
 
 **Checkpoint:** receipts exist for view, cart addition, accepted order, captured payment, one physical return, and refund. Order replay did not add another purchase. Continue to [step 6](06-download-report.md).

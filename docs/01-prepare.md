@@ -12,6 +12,7 @@
 - Prepare one real garment: front and back still-life image URLs, its product-page URL, and a consenting participant's JPEG or PNG portrait on the demo machine. The image URLs must remain reachable by Irisphera during processing. Check suitability with Irisphera before the call.
 - Use a test merchant and test checkout/customer records. This walkthrough records a two-unit purchase and a one-unit return; it does not charge a card or execute a refund in your commerce platform.
 - Install Bash, curl 7.76+ (`--fail-with-body`), jq, and Python 3. Run all commands in the **same Bash terminal**. Do not enable shell tracing or display secret response files while screen-sharing.
+- Complete the [privacy prerequisites](07-privacy-and-consent.md#before-sending-any-real-shopper-data): explain the actual photo/server/provider processing and outcome recording, obtain the required permission, and agree retention and downstream rights handling. Use consenting test participants and test identities; do not promise browser-only storage or immediate deletion. Production activation also requires the approved processing/DPA and supplier arrangements.
 
 ## Open a private working directory
 
