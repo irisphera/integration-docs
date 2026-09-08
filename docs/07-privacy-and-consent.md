@@ -44,6 +44,18 @@ Derive the session from authenticated server state. Never let a browser-selected
 
 Shopper access tokens last 30 minutes by default. Browser expiry and revocation remain enforced, but they do not end an acknowledged merchant consent grant. The trusted backend can read current preferences and propagate restrictions using the captured scope after browser expiry or session-row cleanup. It cannot use that historical scope to enable another purpose, add a legacy identity or renew consent expiry. Refusal and withdrawal remain effective independently of age-based deletion settings.
 
+### Browser identity is not consent or a bearer token
+
+Shopify, WordPress and PrestaShop use a fixed 45-day window for newly issued v2 anonymous browser identity. The deadline starts at first issuance. Visits, browser restarts, token refreshes and consent acknowledgments do not move it. Existing shorter identities are not extended by this change.
+
+- Retain only protected first-party ownership or an opaque server-backed handle. Never infer continuity from IP addresses, fingerprints, raw legacy cookies or a supplied customer ID.
+- Keep short-lived access tokens and consent deadlines separate. A surviving identity does not permit collection after consent expiry, withdrawal, host denial or an identity/security reset.
+- On exactly HTTP `410` with problem type `session_expired`, a trusted backend may create a new session for the same still-owned alias after checking current permission. It must not use an expired anonymous continuation as login proof. `identity_erased`, other `410` responses and `422` are not renewal signals.
+- Keep the original acknowledged session/version pair on immutable order evidence. A replacement session ID must not be paired with an older consent version. Delayed commerce still checks current consent and erasure fences; browser identity expiry alone does not invalidate a captured order receipt.
+- At the fixed deadline, stop browser v2 capture and retries under that identity. Any later eligible identity is new; do not reconnect its prior browser queue or history. Legacy identity and delivery lifetimes remain unchanged.
+
+The 45-day setting is a technical limit, not approval of a legal basis, a consent duration or a server-data retention schedule. The merchant must disclose and approve the configured first-party storage and processing.
+
 ### Withdrawal, retries and identity changes
 
 - Check permission before capture and again before delivery, including outbox retries.
@@ -54,7 +66,7 @@ Shopper access tokens last 30 minutes by default. Browser expiry and revocation 
 
 ## V2 platform wiring
 
-- **Shopify:** use the Customer Privacy API's current analytics and marketing allowances to acknowledge analytics on ordinary visits. Do not change Shopify's tracking consent automatically. Unknown host permission remains denied; personalization and QA remain separate choices. Revalidate bounded session continuation after navigation and apply withdrawal to browser capture and server delivery.
+- **Shopify:** require explicit analytics and marketing choices in the Customer Privacy API together with its current processing allowances before acknowledging analytics on ordinary visits. Do not change Shopify's tracking consent automatically. Unknown host permission remains denied; personalization and QA remain separate choices. Revalidate bounded session continuation after navigation and apply withdrawal to browser capture and server delivery.
 - **WordPress/WooCommerce:** connect the merchant CMP through the plugin's consent adapter. Apply withdrawal to the storefront bridge and queued deliveries. Use the plugin's privacy export/erase hooks and track pending downstream work.
 - **PrestaShop:** connect the configured CMP adapter to actual consent-change events. Apply choices to guest and authenticated sessions, browser capture and server queues. Merchant configuration must not bypass shopper refusal.
 - **Custom API / browser SDK:** enforce choices in the host, participating iframe and trusted backend, not only in the preference dialog.
@@ -76,6 +88,18 @@ Explain the configured photo-processing path before upload. If a face must be bl
 For optional session replay, exclude photos, generated results, canvases, measurements, identity/contact fields, cart/order details, tokens and request/response bodies. Check the actual capture using synthetic data; do not rely solely on default masking. Keep credentials and raw shopper data out of logs, support tickets and screenshots.
 
 Upload only catalog content the merchant is authorized to provide, and keep shopper photos and profiles separate from the product feed.
+
+## Retention and historical reports
+
+Agree a justified retention schedule before activation: purpose, necessary data, maximum duration, clock-start event and earlier deletion triggers. Configure server-side data, local delivery copies and evidence stores separately. Session/token expiry and the 45-day browser identity limit are not data-retention schedules. Disabling age-based deletion does not grant consent or stop otherwise authorized collection.
+
+Detailed v2 reports use currently retained, authorized sources. The default policy protects the latest 12 complete UTC calendar months plus the preceding month needed for attribution. The response's `detailedAvailableFrom` marks the detail boundary, not a guarantee that all data survived. Other zones may need extra source coverage. Withdrawal, erasure, earlier expiry and missing observations can change results; do not present unavailable detail as zero activity.
+
+Shopify, WordPress and PrestaShop default missing delivered-copy durations to 30 days after successful delivery, not capture. Existing positive overrides remain; explicit zero disables that minimization without stopping authorized collection. Existing platform activation, hold and pending-rights gates remain. PrestaShop requires its native 1.7.5 upgrade; historical rows with unknown successful-delivery times are preserved rather than assigned invented timestamps. Keep pending delivery, current restrictions, exact retry evidence and captured rights selectors intact. These minimal receipts and identifiers may still be personal data and need a separate justified lifecycle. Native merchant records, exports, logs, backups and processor copies remain separate responsibilities.
+
+An optional coarse statistical archive is not a replacement for the detailed monthly report. Do not describe linked reports as anonymous, combine coarse archive counts with detailed totals, or enable an archive without Irisphera's approved merchant-specific assessment. Confirm the configured policy and actual deletion/rights behavior with synthetic data before using real shopper data.
+
+For older complete UTC months, `historicalBusinessTotals` returns exact Purchased Units, whole Orders and gross purchase value separately by currency, with order-value exclusions and a privacy-adjusted indicator. These totals have no shopper drill-down, but their retained contributions are pseudonymous personal data, not anonymous. Withdrawal and erasure can reduce them. Do not combine them with overlapping detail or coarse ranges, treat missing months as zero, or describe gross value as revenue net of refunds. Late delivery does not revise a sealed month. Agree the separate financial-contribution retention/disposal schedule; this release provides no automatic age expiry for that store and does not authorize indefinite retention.
 
 ## Data requests and deletion
 

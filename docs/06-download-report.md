@@ -70,6 +70,20 @@ The return and EUR 99 refund **do not change the original two Purchased Units or
 
 Describe the report's permitted collection population and consent-related coverage limits. Do not describe an opt-in cohort as all visitors, manufacture denied events, or infer missing activity is zero. Reporting and identity resolution do not supply a legal basis for the underlying collection; see [legacy/v2 privacy requirements](07-privacy-and-consent.md#legacyv2-overlap-and-reports).
 
+## Interpret older reporting periods
+
+Detailed v2 reports retain the conversion, Purchased Unit, whole-Order AOV, currency revenue, daily activity, SKU-ranking and profile-count measures for records that remain available and authorized. A complete calendar month's attribution needs observations from that month and the preceding calendar month in the requested zone. Agree the necessary retention coverage before promising historical availability. Withdrawal, erasure or earlier expiry can change results; a missing source record cannot be reconstructed from an archive.
+
+The default detail policy covers the latest 12 complete UTC months plus the current partial month; `detailedAvailableFrom` identifies its boundary. Older full UTC months appear separately in `historicalBusinessTotals`. Each entry contains exact `purchasedUnits`, `orders`, `revenueByCurrency`, `excludedRevenueOrders`, `sealedAt` and `privacyAdjusted`. Gross purchase value preserves whole-Order price validation and separate currencies; it is not net of refunds. Invalid-value Orders remain in purchase counts but are excluded from money totals.
+
+These financial contributions remain pseudonymous personal data. Withdrawal or erasure can reduce totals; `privacyAdjusted:true` with zero does not mean the month originally had no activity. Missing months are unknown, not zero. Preserve both the archive and detail boundary in downloaded JSON, but never add an archived month to overlapping detail. Partial UTC months are omitted and late deliveries do not revise sealed months. Agree a separate justified retention/disposal schedule; do not promise indefinite retention. Legacy reports omit these fields.
+
+V2 reports also include `historicalStatistics`, a supplementary array of sealed UTC calendar months, available only where Irisphera has enabled an approved archive for that merchant. Only months fully contained in the requested period appear, regardless of `zone`. An empty array can mean the archive is not enabled or no archived month is available; it never proves zero activity. Each month describes the authorized observations available when it was sealed; late delivery or earlier deletion can limit coverage.
+
+The archive reports coarse distinct-shopper ranges, not exact events, Orders, Purchased Units or revenue. For example, `{lowerInclusive:40,upperExclusive:60}` means at least 40 and fewer than 60 shoppers. A month with `suppressed:true` withholds all counts; do not display them as zero. No shopper, order, SKU or profile detail is available from the archive.
+
+The archive cannot replace exact monthly reports after source-data deletion. Do not add historical ranges to detailed totals: periods can overlap. Monthly distinct shoppers cannot be summed into cross-month distinct shoppers. Sealed months do not change after withdrawal, erasure, replay or identity linking; deleting the merchant removes its archive. Legacy reports omit this array. Confirm the applicable collection, report availability and retention arrangements before using historical reports.
+
 ## Close the call
 
 Confirm that the enterprise can point to:
