@@ -68,7 +68,41 @@ If the captured or canonical product keys differ, the purchase still appears in 
 
 The return and EUR 99 refund **do not change the original two Purchased Units or net EUR 99 out of gross purchase reporting**. Refunds and payment captures are recorded commerce facts, not additional purchase/return ranking events. This report is not a net-sales, cash-settlement, or refund-reconciliation ledger. Currencies remain separate; attribution is observational, not proof of incremental revenue caused by Irisphera. `users` profile distributions may be empty because this demo does not request recommendations.
 
-Describe the report's permitted collection population and consent-related coverage limits. Do not describe an opt-in cohort as all visitors, manufacture denied events, or infer missing activity is zero. Reporting and identity resolution do not supply a legal basis for the underlying collection; see [legacy/v2 privacy requirements](07-privacy-and-consent.md#legacyv2-overlap-and-reports).
+Describe these detailed fields as the eligible **consented event population**, not all visitors or all merchant orders. Do not manufacture denied events or infer missing activity is zero. A separate business snapshot must not change their attribution or denominator. Reporting and identity resolution do not supply a legal basis for collection; see [legacy/v2 privacy requirements](07-privacy-and-consent.md#legacyv2-overlap-and-reports).
+
+## Keep business totals separate from linked attribution
+
+**Contract preview:** where your deployment confirms business-statistics support, v2 reporting adds `merchantBusinessAnalytics` for [separately approved daily snapshots](05-collect-data.md#send-separately-approved-business-statistics). This section does not imply that the purpose or dataset is enabled for your merchant.
+
+The object identifies `metricDefinitionVersion`, `population`, `bucketZone` and `valueBasis`. Its separate `commerce` and `counters` sections contain `status`, `reasons`, `coverage`, `totals`, `daily` and `products`. Section status is `NOT_APPROVED`, `UNAVAILABLE`, `PARTIAL` or `COMPLETE`. Missing/unavailable totals are `null`, not manufactured zero. Coverage describes channel, source/policy versions, date/watermark limits and expected/received/complete day counts. These counts describe the approved source partitions, not a guessed number of store visitors.
+
+Preserve these distinct populations in JSON exports, dashboards and CSV conversions:
+
+| Report source | Population and use |
+| --- | --- |
+| Existing v2 detail: conversion, Purchased Units, AOV, daily activity and product rankings | Currently authorized consented event records. Detailed attribution qualifies successful VTO; an order without attributed units is not proof of a never-user order. |
+| `merchantBusinessAnalytics` COMMERCE | Eligible merchant commerce from an independently approved source. Can include shoppers who refused separate optional linked analytics. Reports Orders, Purchased Units, physical-return units, gross amounts, order-value exclusions and available SKU quantities without shopper linkage. |
+| `merchantBusinessAnalytics` COUNTERS | Approved source request/outcome counts. Not unique visitors, sessions, displayed pages by default, or a conversion denominator. |
+| `historicalBusinessTotals` | Existing consent-gated monthly financial archive. This is not the independent business-statistics source. |
+| `historicalStatistics` | Separately approved coarse monthly archive, not exact merchant commerce. |
+
+Do not add business snapshots to consented event totals: the same order may appear in both. Keep the business dataset, channel, source/policy versions, UTC-day boundary, retention/cutover and coverage information visible. Replacements revise a day; they are not extra activity. These fixed UTC days do not acquire another timezone from the detailed report's `zone`.
+
+A complete day requires verified full-day source coverage. Partial days, missing source coverage, unmapped SKUs, missing snapshots, expired policy, retention expiry and pending rights corrections can limit the report. Missing or unavailable is not zero. Only describe totals as whole-store coverage when every relevant channel and source period is actually covered. Do not label the sum of a partial channel set “all merchant orders”.
+
+A complete UTC bucket contributes only when it lies wholly inside the requested half-open interval. A current-day partial snapshot can contribute through its watermark only when the interval includes the bucket start and extends through that watermark. Excluded edge days make coverage partial; they must not silently contribute out-of-period values. The existing detailed report can still succeed when the business section has no eligible buckets.
+
+COMMERCE totals and daily entries preserve `orders`, `purchasedUnits`, `physicalReturnedUnits`, `excludedRevenueOrders`, `unmappedPurchasedUnits`, `unmappedPhysicalReturnedUnits` and `byCurrency`. Each currency row contains `currency`, `revenueEligibleOrders`, `grossAmount` and `averageOrderValue`. The server derives AOV from **unrounded gross / revenue-eligible Orders** in that currency, then rounds final presentation to two decimals using HALF_EVEN; undefined AOV is `null`. Never divide by all Orders or consented visitors. Keep value exclusions visible.
+
+Gross purchase value is after discounts and includes tax; it excludes shipping and does not subtract refunds. Payment/refund events are not additional Orders; physical returns are a separate return-date measure. Product rows retain channel/SKU identity and available names. Product Purchased Units plus unmapped Purchased Units equal the all-product total. The corresponding equality applies to a source's physical returns only when that metric is observed. Keep unmapped units visible without discarding valid merchant totals or calling incomplete SKU coverage complete.
+
+Physical-return fields are required but nullable. `null` means unavailable, not zero; native refund/restock data alone is not physical-return evidence. When every contributing source has unavailable returns, the reported return total is `null`. With mixed observed/unavailable sources, the report sums only observed returns and marks coverage partial with `PHYSICAL_RETURNS_UNAVAILABLE`. Label that number as an observed subtotal, not all-store returns. Preserve return nulls in exports and charts; never fill them with zero or derive a complete return rate from partial evidence.
+
+COUNTERS totals and daily entries use `events:[{eventType,count}]`; product rows contain their separate event breakdown. Never add product subtotals to overall totals. `PRODUCT_REQUEST` is a distinct server-request measure, not an alias for `PRODUCT_VIEWED`.
+
+Neither an exact small count nor the absence of a shopper ID proves anonymity. Treat business snapshots as protected statistics unless a deployment-specific assessment establishes otherwise. Preserve the applicable retention, access and rights controls; do not impose an arbitrary display threshold that hides lawful exact merchant totals.
+
+A broad order total minus a partial consented VTO cohort is **not** a non-user cohort. Never divide all-store Orders by consented visitors, use request counts as unique visitors, or treat unknown feature status as no use. The independent snapshot contract carries no cohort marker. Its availability does not expand conversion coverage or establish causal uplift.
 
 ## Interpret older reporting periods
 
@@ -93,6 +127,7 @@ Confirm that the enterprise can point to:
 3. The generated try-on image.
 4. Its storefront hooks, server-side order/lifecycle hooks, and durable retry storage.
 5. The downloaded report and reconciled demo counts.
+6. If business statistics is enabled: its active channel/dataset policies, native source adapter, complete/partial coverage evidence, source-rights correction path and separately labeled report population.
 
 Before production, complete the [privacy acceptance scenarios](07-privacy-and-consent.md#acceptance-scenarios-before-enterprise-activation). Use the documented privacy-request workflow for shopper data requests; revoking a session or deleting local integration state does not erase server or provider data. Remove the private demo directory and photos according to the agreed retention policy; do not commit or screen-share its secret files. Confirm downstream request completion separately.
 

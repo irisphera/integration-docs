@@ -9,7 +9,8 @@ Wire shopper choices, consent-aware delivery and data requests alongside the [si
 - Agree the permitted processing, merchant/Irisphera responsibilities, applicable agreements, notices, recipients, retention and support contacts before sending shopper data.
 - Explain photo uploads and server/provider processing before a participant uses try-on or sizing. Use consenting participants and test identities for the walkthrough.
 - Treat photos, measurements, shopper identifiers and linked order history as personal data. Do not promise browser-only processing or immediate deletion.
-- Keep optional behavioral analytics/attribution, saved personalization and QA session recording separate. Use the merchant CMP's current permission for analytics; do not require a second Irisphera opt-in for that same purpose. A merchant credential, login, order webhook or terms acceptance is not permission.
+- Keep optional behavioral analytics/attribution, saved personalization and QA session recording separate. Use the merchant CMP's valid, current permission for the covered optional analytics purpose; do not require a second Irisphera opt-in for that same purpose. A merchant credential, login, order webhook or terms acceptance is not permission.
+- If separately approved merchant business measurement is available, follow its own source, notice, rights and retention requirements below. It does not enable optional browser tracking, personalization, QA or identity linkage.
 
 ## Connect v2 shopper choices
 
@@ -59,12 +60,54 @@ The 45-day setting is a technical limit, not approval of a legal basis, a consen
 ### Withdrawal, retries and identity changes
 
 - Check permission before capture and again before delivery, including outbox retries.
-- On withdrawal, stop affected producers, recorder capture and queued sends. Prevent delayed responses from restoring withdrawn permission or repopulating optional saved data.
+- On withdrawal, stop affected producers, recorder capture and queued sends. Prevent delayed responses from restoring withdrawn permission or repopulating optional saved data. Initiate disposal of consent-only retained data without requiring a separate erasure request, and track downstream completion. Preserve only records with a genuine separate purpose and applicable retention; report exclusion alone is not deletion.
 - Propagate changes to participating tabs and iframes. Validate message source and origin; do not send tokens, photos or profiles to arbitrary origins.
 - Re-evaluate permission after login, logout or account switching. Do not transfer one shopper's choice or history to another shopper.
 - Keep consent withdrawal, session revocation and a data-erasure request as separate actions.
 
+## Separately approved merchant business measurement
+
+**Contract preview:** activate only after Irisphera confirms deployment support and the merchant's approved source configuration. An installed plugin, a working API key or this documentation does not activate the purpose.
+
+The separate [business-statistics path](05-collect-data.md#send-separately-approved-business-statistics) sends minimized daily COMMERCE or COUNTERS snapshots, not shopper histories. It can support broad merchant Orders, Purchased Units, gross purchase amounts, AOV, product sales, physical-return units and approved request/outcome counts. The selected lawful basis and source method must be established before processing. A legitimate-interest determination can cover an appropriate business-measurement source; it is not a universal analytics exemption or authority to reuse refused linked events.
+
+### Read the source policy; do not create a grant
+
+`POST /merchant/v2/collection-context` adds `businessStatistics.commerce` and `businessStatistics.counters` where supported. Each reports a `status`:
+
+| Status | Source action |
+| --- | --- |
+| `AVAILABLE` | Verify the exact captured channel, versions, time window, allowed types and local restrictions before capture/delivery. This status is not certification of the merchant's legal evidence. |
+| `NOT_APPROVED` | Do not start capture or delivery for this dataset. |
+| `NOT_YET_EFFECTIVE` | Wait for the actual approved source/notice cutover; do not buffer earlier events for later inclusion. |
+| `EXPIRED` | Stop affected collection/delivery; continue required retention and rights work. |
+| `RESTRICTED` | Stop affected source processing and follow the restriction/correction workflow. |
+
+An absent `businessStatistics` field is not approval. Availability can include `businessPolicyVersion`, `sourceRecipeVersion`, `effectiveFrom`, `expiresAt`, `sourceRetentionDays`, `aggregateRetentionDays`, `allowedCounterTypes`, `priorChoiceTreatment` and a `reason`. Keep the returned policy bound to its channel/dataset; one installation's policy cannot authorize another. The interface does not expose private legal evidence or provide a self-approval operation.
+
+`priorChoiceTreatment` is `HONOR_BROAD_MEASUREMENT_REFUSAL` or `OPTIONAL_LINKED_ANALYTICS_ONLY`, based on the reviewed original notices. Apply it to real recorded choices. A missing optional choice or default `false` is not evidence that the shopper actively refused all merchant measurement; do not invent an objection from it. Conversely, a broad recorded refusal must not be narrowed merely because a newer UI label differs.
+
+Confirm these deployment facts before enabling a native source:
+
+- A specific business purpose, approved basis, source recipe, fields, dimensions and non-overlapping source partition.
+- An accessible business-purpose notice with the actual source, purpose/basis, retention, recipients and rights route. Its version is separate from the optional-consent notice; publishing it must not change existing optional grants.
+- The terminal storage/access determination for that exact method. Backend aggregation is not permission to add a browser beacon or reuse a necessary cookie for analytics. COMMERCE approval does not approve COUNTERS or every counter type.
+- A prospective effective date and source deployment that exclude historical backfill and old rejected consent envelopes. A new delivery time, UUID or policy label does not make an old event eligible.
+- A finite source and aggregate lifecycle, tested source reconciliation, active objection route and assigned downstream completion owner.
+
+### Distinguish refusal, withdrawal and business objection
+
+Refusal or withdrawal of **optional linked analytics** stops that processing. It does not, by itself, stop a genuinely separate, properly approved and disclosed business-measurement purpose. Do not require a fabricated guest receipt or optional opt-in just to submit an otherwise eligible business snapshot.
+
+However, honor the actual choice presented to the shopper. If the old notice or control promised refusal of all measurement, do not silently narrow it after the fact. Carry applicable broad refusals into the business-source restriction until the scope is properly resolved. A new business notice or a later optional-consent grant must not clear a recorded business objection.
+
+Offer a clear merchant business-objection route, separate from the optional consent setting. Stop affected measurement and route the request through the agreed rights workflow. Do not treat an empty analytics checkbox as the only possible objection, or override a business objection because a policy remains `AVAILABLE`. If a control says “Reject all measurement”, it must apply to both scopes; a control limited to optional linked analytics must say so clearly.
+
+Necessary checkout, order service and properly retained accounting records keep their own purposes and duties. Removing an analytics contribution must not delete mandatory native merchant records. Conversely, those duties are not authority to retain optional browsing or attribution data.
+
 ## V2 platform wiring
+
+These controls describe the existing **optional-consent** path. An independently approved native business source follows its own policy and rights controls above; it must not bypass these optional gates.
 
 - **Shopify:** require explicit analytics and marketing choices in the Customer Privacy API together with its current processing allowances before acknowledging analytics on ordinary visits. Do not change Shopify's tracking consent automatically. Unknown host permission remains denied; personalization and QA remain separate choices. Revalidate bounded session continuation after navigation and apply withdrawal to browser capture and server delivery.
 - **WordPress/WooCommerce:** connect the merchant CMP through the plugin's consent adapter. Apply withdrawal to the storefront bridge and queued deliveries. Use the plugin's privacy export/erase hooks and track pending downstream work.
@@ -79,7 +122,7 @@ Both supported collection generations and both report families remain available.
 
 Preserve collection provenance independently of payload schema version. Retain per-target delivery outcomes so a failed v2 request does not cause an already accepted legacy event to be replayed.
 
-V1 reports describe stored legacy activity without requiring retroactive v2 consent records. V2 reports describe only activity eligible under v2 consent checks, including eligible historical v2 events. The populations can differ: do not label a v2 opt-in cohort as all visitors, fabricate denied events, or sum both reports as unique activity. Identity linking and reporting do not grant permission to collect additional history.
+V1 reports describe stored legacy activity without requiring retroactive v2 consent records. Existing v2 event-derived fields describe activity eligible under v2 consent checks, including eligible historical v2 events. Where supported and separately approved, `merchantBusinessAnalytics` describes the independent merchant source; it does not change those event-derived fields. The populations can differ: do not label a v2 opt-in cohort as all visitors, fabricate denied events, or sum these sources as unique activity. Identity linking and reporting do not grant permission to collect additional history.
 
 ## Photo and recording handling
 
@@ -99,7 +142,9 @@ Shopify, WordPress and PrestaShop default missing delivered-copy durations to 30
 
 An optional coarse statistical archive is not a replacement for the detailed monthly report. Do not describe linked reports as anonymous, combine coarse archive counts with detailed totals, or enable an archive without Irisphera's approved merchant-specific assessment. Confirm the configured policy and actual deletion/rights behavior with synthetic data before using real shopper data.
 
-For older complete UTC months, `historicalBusinessTotals` returns exact Purchased Units, whole Orders and gross purchase value separately by currency, with order-value exclusions and a privacy-adjusted indicator. These totals have no shopper drill-down, but their retained contributions are pseudonymous personal data, not anonymous. Withdrawal and erasure can reduce them. Do not combine them with overlapping detail or coarse ranges, treat missing months as zero, or describe gross value as revenue net of refunds. Late delivery does not revise a sealed month. Agree the separate financial-contribution retention/disposal schedule; this release provides no automatic age expiry for that store and does not authorize indefinite retention.
+For older complete UTC months, `historicalBusinessTotals` returns exact Purchased Units, whole Orders and gross purchase value separately by currency, with order-value exclusions and a privacy-adjusted indicator. These totals have no shopper drill-down, but their retained contributions are pseudonymous personal data, not anonymous. Withdrawal and erasure can reduce them. Do not combine them with overlapping detail or coarse ranges, treat missing months as zero, or describe gross value as revenue net of refunds. Late delivery does not revise a sealed month. Agree a separate finite financial-contribution retention/disposal schedule and verify its effective operation; report availability does not authorize indefinite retention.
+
+Independent business snapshots have their own source and aggregate limits. Treat exact daily/SKU cells as protected statistics, not automatically anonymous because no shopper identifier was transmitted. Keep enough lawful source capability to correct live personal snapshots, or shorten their lifetime/use the agreed suppression path. Do not extend native customer-record retention merely to preserve analytics. Revision, policy renewal or retry must not reset the original bucket's expiry. Continue disposal, queue minimization and rights work after a policy expires or is removed.
 
 ## Data requests and deletion
 
@@ -116,6 +161,29 @@ Keep the credentials and delivery workers needed to complete pending requests. D
 
 `DELETE /shopper/v2/session` revokes a session only. It does not erase historical data. Deleting browser storage, replacing identifiers with hashes or downloading a merchant performance report is not a substitute for the data-request workflow.
 
+### Business-statistics source corrections
+
+Central daily snapshots have no subject or order key. An existing shopper EXPORT/ERASE selector alone cannot locate that shopper's contribution in them. Connect native merchant privacy export/erasure hooks **and a business-objection entrypoint** to the source adapter, including guest orders whose shoppers have no Irisphera session. Do not invent a shopper request kind or encode an objection as an analytics grant.
+
+The business-statistics contract provides two merchant-authenticated rights operations. Both require the server-held merchant key and captured `X-Irisphera-Channel-Id`; neither has a request body:
+
+| Operation | Effect |
+| --- | --- |
+| `POST /merchant/v2/business-statistics/{datasetKind}/{date}/restrict` | `204`: temporarily exclude the bucket from reads while source reconciliation is pending. Idempotent. Only a valid higher-revision corrected replacement clears the restriction; an exact replay cannot. |
+| `DELETE /merchant/v2/business-statistics/{datasetKind}/{date}` | `204`: remove values and permanently suppress that source bucket. Idempotent. Neither an old replay nor a higher revision can restore it. |
+
+These rights operations do not require an active collection policy and remain available for an owned captured channel after policy/channel expiry or inactivation. They never authorize cross-merchant access or reactivate collection. A missing owned bucket can still be fenced against delayed delivery. Do not use permanent deletion as a temporary hold when a valid reconstruction is available.
+
+1. Persist the source restriction with its scope and effective time. Stop new inclusion and affected queued delivery. Keep any necessary customer/order locator on the merchant side, or in the protected rights task where needed, never in the statistics snapshot.
+2. Identify affected retained channel/day/dataset buckets and call their restriction operation **before clearing/rebuilding source data**. If the range is unknown, coordinate a conservative source-scope hold with Irisphera while identifying affected buckets. Do not claim the central service can identify the person from totals alone, or claim a remote hold succeeded before acknowledgement.
+3. Rebuild from still-lawful authoritative merchant facts with their original purpose/cutover eligibility, excluding affected contributions. Do not rescan old rejected queues or backfill pre-cutover purchases. Leave mandatory native accounting records intact.
+4. Where ordinary snapshot admission remains valid, deliver higher-revision full replacements, including explicit zero/empty replacements when appropriate. A complete replacement of the saved bucket is not necessarily `coverage.status: COMPLETE`; source gaps must remain partial. If approval has expired or a lawful rebuild cannot be made, use the permanent bucket deletion operation instead of faking a new policy. Old outbox retries and restored backups must not restore superseded or deleted values.
+5. Track corrections to caches, exports and downstream copies. Record affected ranges, revisions, source evidence and exceptions. Keep work pending if a restriction, replacement or deletion call is unacknowledged. Confirm completion only when required source and downstream work is complete and the applicable restriction is reflected; a bucket `204` alone does not prove every copy was deleted.
+
+If the source cannot rebuild an affected bucket, remove it through the deletion operation rather than assert a complete correction. Keep pending rights work and the credentials/workers needed to finish it during disconnect or uninstall. Source retention must cover the central aggregate lifetime plus the configured suppression/reconciliation margin, within the approved finite schedule. A short delivery-copy lifetime does not establish that older snapshots can be corrected. Do not silently extend native customer retention to meet this condition; shorten aggregate retention or revise the lawful design when needed.
+
+For COUNTERS, do not introduce persistent visitor identity solely to promise individual subtraction. Document what lawful existing information can locate a contribution, honor future objections at the actionable source path, and act on usable information provided by the person. If a reliable historical subtraction is not possible, explain the actual limitation and use the agreed affected-bucket handling. No-identifier input, hashing and aggregate output do not alone establish anonymity or completed erasure.
+
 ## Acceptance scenarios before enterprise activation
 
 Exercise the v2 integration with synthetic shoppers and an isolated test merchant. Separately verify that configured v1 delivery remains independent and that v2 denial never creates a legacy fallback:
@@ -128,5 +196,13 @@ Exercise the v2 integration with synthetic shoppers and an isolated test merchan
 6. **Invalid or conflicting preferences:** expired/malformed permission stays denied; a `409` is handled without overwriting a newer withdrawal.
 7. **Recording exclusions:** synthetic private markers do not appear in captured content.
 8. **Data request:** the correct merchant/subject is targeted, retries are stable, and pending downstream work is distinguished from completed deletion.
+9. **Approved business source with optional refusal:** an actual native new order contributes to the approved COMMERCE snapshot without an optional receipt or synthetic shopper; the existing optional event route remains denied.
+10. **Missing or mismatched business policy:** no capture/delivery for absent, expired, wrong-channel, wrong-recipe or unapproved datasets. Missing coverage is unavailable, not zero.
+11. **Cutover and broad refusal:** no old rejected envelopes or pre-cutover purchase backfill; broad measurement refusals and business objections survive notice/version changes and later optional grants.
+12. **Exact replacement:** replay does not add counts; a newer revision replaces the day; conflicting/stale revisions and concurrent source updates cannot double-count. Retain money precision across day/channel sums.
+13. **Missing SKU, unavailable returns and counters:** unmapped units remain in all-product totals; unobservable physical-return fields remain required `null`, not false zero or refund-derived counts; mixed return coverage stays partial. Approved server requests use `PRODUCT_REQUEST`, not `PRODUCT_VIEWED`; counters contain no visitor/cohort inference or browser identifiers.
+14. **Source rights correction:** a native guest order can be excluded; affected report scope remains unavailable while pending; corrected/empty revisions propagate; replay/restore cannot restore removed contributions.
+15. **Retention and removal:** category deadlines still run after policy removal; source reconciliation remains viable for live personal snapshots or affected buckets are suppressed; downstream copies remain pending until resolved.
+16. **Report populations:** independent business totals are separate from opt-in detail and historical archives; partial/missing days and source partitions remain visible; no all-store/consented-denominator conversion or claimed causal uplift.
 
-Confirm the merchant's notices, configured choices, retention arrangements and support handoff before using real shopper data.
+Confirm the merchant's notices, configured choices, source approvals, retention arrangements and support handoff before using real shopper data. Passing synthetic tests does not create the missing deployment evidence or activate a purpose.
