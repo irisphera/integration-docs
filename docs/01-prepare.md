@@ -1,18 +1,22 @@
-# 1. Prepare the demo
+# 1. Prepare
 
-[Call agenda](../README.md) · Next: [Create a merchant](02-create-merchant.md)
+[Integration guide](../README.md) · Next: [Create the merchant organization](02-create-merchant.md)
 
-**Goal:** start with an integrator API key and an agreed demo environment.
+**Goal:** get an integrator API key and an environment, open a private terminal, and check that the environment serves the routes in this guide.
 
-## Arrange before the call
+## What you need from Irisphera
 
-- Irisphera supplies the environment URL and integrator API key. Confirm that this environment supports the v2 session and event APIs, has active catalog workers, and has virtual try-on quota and providers available.
-- Merchant creation or an existing merchant key is enough to resolve collection context in step 2. No channel credential, identity-administrator credential, or manual namespace handoff is needed.
-- Use the same registered channel and catalog SKU throughout. If platform product identifiers differ, arrange canonical SKU aliases with Irisphera; feed upload does not create aliases and there is no public product-alias management API.
-- Prepare one real garment: front and back still-life image URLs, its product-page URL, and a consenting participant's JPEG or PNG portrait on the demo machine. The image URLs must remain reachable by Irisphera during processing. Check suitability with Irisphera before the call.
-- Use a test merchant and test checkout/customer records. This walkthrough records a two-unit purchase and a one-unit return; it does not charge a card or execute a refund in your commerce platform.
-- Install Bash, curl 7.76+ (`--fail-with-body`), jq, and Python 3. Run all commands in the **same Bash terminal**. Do not enable shell tracing or display secret response files while screen-sharing.
-- Complete the [privacy prerequisites](07-privacy-and-consent.md#before-sending-any-real-shopper-data): explain the actual photo/server/provider processing and outcome recording, obtain the required permission, and agree retention and downstream rights handling. Use consenting test participants and test identities; do not promise browser-only storage or immediate deletion. Production activation also requires the approved processing/DPA and supplier arrangements.
+- **Environment URL**, for example `https://api.irisphera.com` for production or a test environment agreed with Irisphera.
+- **Integrator API key.** It identifies your platform. With it you create and manage the merchant organizations you own, and nothing else: it cannot call catalog, shopper or report routes. Keep it in your secret manager.
+- **Quota** for virtual try-on and recommendations on the merchant organizations you will create. Without quota the shopper token does not get those feature scopes (step 4).
+
+## What to prepare
+
+- One real garment: front and back still-life image URLs, a featured image URL and its product-page URL. Irisphera must be able to reach the image URLs while it processes the product.
+- A JPEG, PNG, WebP or AVIF photo of a test participant who has agreed to take part, for try-on and sizing. Check suitability with Irisphera first.
+- A test merchant and test checkout or customer records. This walkthrough records a two-unit purchase and a one-unit return; it does not charge a card or refund one.
+- Bash, curl 7.76 or later (for `--fail-with-body`), jq and Python 3. Run every command in the **same Bash terminal**. Do not enable shell tracing or display secret response files while you share your screen.
+- The [privacy prerequisites](privacy-and-consent.md#before-sending-any-real-shopper-data). Explain the real photo, server and provider processing, and the outcome recording. Obtain the permissions the notice needs, and agree retention and rights handling. Use consenting test participants and test identities. Do not promise browser-only storage or immediate deletion.
 
 ## Open a private working directory
 
@@ -34,7 +38,7 @@ read -rsp 'Integrator API key: ' INTEGRATOR_API_KEY; printf '\n'
 printf 'Private demo files: %s\n' "$DEMO_DIR"
 ```
 
-Use HTTPS for the approved remote environment. These terminal calls stand in for your **trusted backend**. API keys and anonymous-continuation secrets must never be shipped in storefront JavaScript. Only the short-lived shopper bearer token goes to the browser. Send exactly one credential per request, as shown in each step.
+`uuid` makes UUIDv7 identifiers, which the event routes require. Use HTTPS. These terminal calls stand in for your **trusted backend**. API keys and anonymous-continuation secrets must never be shipped in storefront JavaScript. Only the short-lived shopper token goes to the browser. Send exactly one credential per request, as each step shows.
 
 ## Check the deployed contract
 
@@ -42,12 +46,17 @@ Use HTTPS for the approved remote environment. These terminal calls stand in for
 curl --fail-with-body -sS "$IRISPHERA_BASE_URL/v3/api-docs" -o openapi.json
 jq -e '.paths["/integrator/v1/merchant"].post
   and .paths["/merchant/v2/collection-context"].post
+  and .paths["/merchant/v1/collection/{collectionId}/file"].post
   and .paths["/merchant/v2/shopper-sessions"].post
+  and .paths["/shopper/v2/privacy/preferences"].put
+  and .paths["/shopper/v2/stylist-preview"].post
+  and .paths["/shopper/v2/recommendations"].post
+  and .paths["/shopper/v2/image-shares/{sourceEventId}"].put
   and .paths["/merchant/v2/commerce-events/{sourceEventId}"].put
-  and .paths["/merchant/v1/report"].post
-  and .paths["/merchant/v2/report"].post' openapi.json >/dev/null
+  and .paths["/merchant/v2/report"].post
+  and .paths["/merchant/v2/privacy/requests"].post' openapi.json >/dev/null
 ```
 
-If API documentation is not exposed publicly, obtain the deployed contract from Irisphera instead. Do not assume that an older environment has the endpoints in this guide.
+If the environment does not publish its API documentation, ask Irisphera for the deployed contract. Do not assume that an older environment serves the routes in this guide.
 
-**Checkpoint:** environment and integrator key ready; demo assets prepared. Keep this terminal open and continue to [step 2](02-create-merchant.md).
+**Checkpoint:** the environment URL and integrator key are in the terminal, the contract check passes, and the garment and photo are ready. Keep this terminal open and continue to [step 2](02-create-merchant.md).
