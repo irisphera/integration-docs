@@ -156,7 +156,7 @@ curl --fail-with-body -sS "$IRISPHERA_BASE_URL/shopper/v2/auth/access-token" \
 | `shopper:session` | Always | Session and token details |
 | `shopper:events` | Always | Storefront events and image shares |
 | `shopper:vto` | Try-on quota is available | Try-on and 3D preview |
-| `shopper:recommendations` | Recommendation quota is available | Recommendations, body measurements, color extraction |
+| `shopper:recommendations` | Recommendation quota is available | Recommendations, mix and match, body measurements, color extraction |
 
 A route outside the token's scopes returns `403`. The shopper's privacy preferences accept any shopper token, so a shopper can always refuse or withdraw. `GET /shopper/v2/auth/access-token` is the storefront's bootstrap call: it returns `enabledFeatures` (`STYLIST_PREVIEW`, `SHOPPER_RECOMMENDATIONS`) and the organization's `themeConfig`, `flowConfig` and `sizingConfig`. `/shopper/v1` routes are not served.
 

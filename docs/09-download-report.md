@@ -1,6 +1,6 @@
-# 8. Download the report
+# 9. Download the report
 
-Previous: [Storefront and order events](07-collect-events.md) · [Integration guide](../README.md) · Next: [Privacy requests and offboarding](09-privacy-requests-and-offboarding.md)
+Previous: [Storefront and order events](08-collect-events.md) · [Integration guide](../README.md) · Next: [Privacy requests and offboarding](10-privacy-requests-and-offboarding.md)
 
 **Goal:** download the merchant's report, check that it counts exactly what the walkthrough did, and read how the purchase was attributed to the try-on.
 
@@ -107,7 +107,7 @@ These figures cover only shoppers who granted `analytics`. They are not all visi
 
 ## Daily business statistics in the report
 
-`merchantBusinessAnalytics` reports the [daily business statistics](07-collect-events.md#daily-business-statistics), separately from the figures above:
+`merchantBusinessAnalytics` reports the [daily business statistics](08-collect-events.md#daily-business-statistics), separately from the figures above:
 
 ```bash
 jq '.merchantBusinessAnalytics | {commerce:{status:.commerce.status, reasons:.commerce.reasons},
@@ -142,4 +142,4 @@ Detailed figures cover a limited window: by default the last 12 complete UTC mon
 
 A missing month is unknown, not zero. Do not add archived months to detailed figures, and do not add up monthly shopper ranges across months. A withdrawal or an erasure can reduce detailed figures for any period, so a report downloaded later can show less.
 
-**Checkpoint:** the reconciliation check prints `true`, and the attributed values match. Continue to [step 9](09-privacy-requests-and-offboarding.md).
+**Checkpoint:** the reconciliation check prints `true`, and the attributed values match. Continue to [step 10](10-privacy-requests-and-offboarding.md).

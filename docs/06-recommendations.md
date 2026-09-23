@@ -1,6 +1,6 @@
 # 6. Recommendations and sizing
 
-Previous: [Virtual try-on](05-virtual-try-on.md) · [Integration guide](../README.md) · Next: [Storefront and order events](07-collect-events.md)
+Previous: [Virtual try-on](05-virtual-try-on.md) · [Integration guide](../README.md) · Next: [Mix and match](07-mix-and-match.md)
 
 **Goal:** estimate the participant's body measurements and colors from photos, build a shopper profile, and get recommended products with sizes.
 
@@ -112,4 +112,4 @@ The recommendation itself works whatever the shopper chose in [step 4](04-shoppe
 
 A withdrawal applies from the next request. Irisphera checks the choice again for every request.
 
-**Checkpoint:** `recommendations.json` lists recommended SKUs. Continue to [step 7](07-collect-events.md).
+**Checkpoint:** `recommendations.json` lists recommended SKUs. Continue to [step 7](07-mix-and-match.md).

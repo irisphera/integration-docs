@@ -1,6 +1,6 @@
-# 9. Privacy requests and offboarding
+# 10. Privacy requests and offboarding
 
-Previous: [Download the report](08-download-report.md) · [Integration guide](../README.md)
+Previous: [Download the report](09-download-report.md) · [Integration guide](../README.md)
 
 **Goal:** export the test shopper's data, end the shopper's session, erase the shopper, and learn how to remove a merchant organization.
 
@@ -13,7 +13,7 @@ A shopper asks the store for a copy or the erasure of their data. Your support p
 | Customer | `{"externalIdentity":{"namespace":"<customer namespace>","kind":"CUSTOMER","externalId":"<customer ID>"}}` | A customer account, by the platform customer ID. The walkthrough uses this. |
 | Anonymous browser | `{"externalIdentity":{"namespace":"<anonymous namespace>","kind":"ANONYMOUS","externalId":"<anonymous ID>"}}` | An anonymous ID that your backend still holds for the person |
 | Irisphera shopper | `{"shopperId":"…","identityVersion":…}` | A shopper known by the `shopperId` and `identityVersion` of a session response. A `409` means the identity changed since, for example through an account link: use the version from a newer session. |
-| Guest order | `{"orderGuest":{"sourceOrderId":"<order ID>"}}` | The shopper of a guest order sent with an `orderGuest` subject in [step 7](07-collect-events.md#choose-the-orders-subject) |
+| Guest order | `{"orderGuest":{"sourceOrderId":"<order ID>"}}` | The shopper of a guest order sent with an `orderGuest` subject in [step 8](08-collect-events.md#choose-the-orders-subject) |
 
 A customer, anonymous or shopper request covers the whole organization, including the identities linked to it, such as an anonymous history linked at sign-in. A guest-order request covers one order on one channel: send the channel captured with the order in `X-Irisphera-Channel-Id`, because the same order number can exist on another channel. The walkthrough sends the header on every privacy request; identity requests ignore it.
 
@@ -107,7 +107,7 @@ What the erasure does at once:
 - Irisphera keeps only a keyed digest of the erased ID, so the ID cannot come back: a new session for it returns `410` with the problem type `identity_erased`. Handle this like an unavailable feature: the store keeps working without Irisphera features for that account. An erasure of an ID that Irisphera never saw also records the digest.
 - Reports lose the shopper's activity, for every period.
 
-Download the report of step 8 again and check that the walkthrough's activity is gone:
+Download the report of step 9 again and check that the walkthrough's activity is gone:
 
 ```bash
 curl --fail-with-body -sS "$IRISPHERA_BASE_URL/merchant/v2/report" \
@@ -134,7 +134,7 @@ The erasure is complete only when `status` is `COMPLETED`. Until then, tell the 
 
 Daily snapshots contain no shopper IDs, so Irisphera cannot find a shopper's orders in them. After an erasure it holds back the business days that may contain them: for each channel with daily business statistics, from `effectiveFrom`, or from the start of the `aggregateRetentionDays` period if later, up to the day of the request. A customer, anonymous or shopper erasure holds every channel of the organization; a guest-order erasure holds only the order's channel. Reports leave the held days out, with the reason `BUSINESS_SOURCE_RECONCILIATION_PENDING`, and the request lists `merchant-business-source`, until the correction is done.
 
-`COMMERCE` is available by default on every channel ([step 7](07-collect-events.md#daily-business-statistics)), so every erasure starts this correction. Your source adapter does it:
+`COMMERCE` is available by default on every channel ([step 8](08-collect-events.md#daily-business-statistics)), so every erasure starts this correction. Your source adapter does it:
 
 1. Exclude the shopper from your source: later snapshots leave the shopper's orders out. Discard queued snapshots built before the exclusion.
 2. Look up the shopper's orders in your platform for the held period.

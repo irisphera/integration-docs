@@ -1,6 +1,6 @@
-# 7. Storefront and order events
+# 8. Storefront and order events
 
-Previous: [Recommendations and sizing](06-recommendations.md) · [Integration guide](../README.md) · Next: [Download the report](08-download-report.md)
+Previous: [Mix and match](07-mix-and-match.md) · [Integration guide](../README.md) · Next: [Download the report](09-download-report.md)
 
 **Goal:** send the product view, the cart addition and the order lifecycle of the demo purchase, so the report can count them and attribute the purchase to the try-on.
 
@@ -280,4 +280,4 @@ This command only sends a snapshot that your source already produced. The demo h
 
 Use the channel saved with the snapshot, not the installation's current default. A correction is a complete snapshot with a higher revision. Keep your source able to rebuild a day for as long as Irisphera keeps it (`aggregateRetentionDays`, plus a short margin), so that a shopper's objection or erasure can be applied: see [corrections](privacy-and-consent.md#business-statistics-source-corrections).
 
-**Checkpoint:** receipts exist for the view, the cart addition, the order, the payment, the return and the refund, and the order replay returned `200`. Keep the shopper token for [step 9](09-privacy-requests-and-offboarding.md). Continue to [step 8](08-download-report.md).
+**Checkpoint:** receipts exist for the view, the cart addition, the order, the payment, the return and the refund, and the order replay returned `200`. Keep the shopper token for [step 10](10-privacy-requests-and-offboarding.md). Continue to [step 9](09-download-report.md).

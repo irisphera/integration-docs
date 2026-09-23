@@ -61,7 +61,7 @@ Every successful branch returns `201`. For a transport retry, resend **the saved
 | Read one organization | `GET /integrator/v1/merchant/{merchantId}` |
 | Change settings or rotate the merchant key | `PUT /integrator/v1/merchant/{merchantId}` with `name` and `apiKey`. Omitted `themeConfig` or `flowConfig` values keep their current settings. |
 | Recover a lost merchant key | `GET /integrator/v1/merchant/{merchantId}/apikey` returns `{merchantId, apiKey}` |
-| Remove an organization | `DELETE /integrator/v1/merchant/{merchantId}`. See [step 9](09-privacy-requests-and-offboarding.md#remove-a-merchant-organization). |
+| Remove an organization | `DELETE /integrator/v1/merchant/{merchantId}`. See [step 10](10-privacy-requests-and-offboarding.md#remove-a-merchant-organization). |
 
 You can only read or change organizations you own; any other ID returns `403`. Never log, cache or send merchant keys to a browser.
 
@@ -98,7 +98,7 @@ jq '{channelId,collectionMode,availableNoticeVersion,purchaseAttributionDisclosu
 | `namespace` | Namespace for signed-in customer identities |
 | `availableNoticeVersion` | The privacy notice version a shopper acknowledges in [step 4](04-shopper-session.md#record-the-shoppers-privacy-choices). Read it here; do not hardcode it. |
 | `purchaseAttributionDisclosure` | When present, the purchase-attribution terms your notice must disclose: `policyVersion`, `rollingWindowSeconds`, `productScope` `SAME_SKU`, `touchRule` `LAST_SUCCESSFUL` and `requiredNoticeVersion` |
-| `businessStatistics` | Which daily business statistics this channel accepts; see [step 7](07-collect-events.md#daily-business-statistics) |
+| `businessStatistics` | Which daily business statistics this channel accepts; see [step 8](08-collect-events.md#daily-business-statistics) |
 
 Use the returned namespaces; do not invent them. Collection is always v2: there is no legacy or dual collection, and no fallback when v2 refuses something. The context does not record consent and does not change quota.
 

@@ -12,7 +12,7 @@
 
 ## What to prepare
 
-- One real garment: front and back still-life image URLs, a featured image URL and its product-page URL. Irisphera must be able to reach the image URLs while it processes the product.
+- One real garment, and one product that completes an outfit with it, such as trousers for a blazer. For each: front and back still-life image URLs, a featured image URL and its product-page URL. Irisphera must be able to reach the image URLs while it processes the products.
 - A JPEG, PNG, WebP or AVIF photo of a test participant who has agreed to take part, for try-on and sizing. Check suitability with Irisphera first.
 - A test merchant and test checkout or customer records. This walkthrough records a two-unit purchase and a one-unit return; it does not charge a card or refund one.
 - Bash, curl 7.76 or later (for `--fail-with-body`), jq and Python 3. Run every command in the **same Bash terminal**. Do not enable shell tracing or display secret response files while you share your screen.
@@ -51,6 +51,7 @@ jq -e '.paths["/integrator/v1/merchant"].post
   and .paths["/shopper/v2/privacy/preferences"].put
   and .paths["/shopper/v2/stylist-preview"].post
   and .paths["/shopper/v2/recommendations"].post
+  and .paths["/shopper/v2/mixmatch/{skuCustomId}"].get
   and .paths["/shopper/v2/image-shares/{sourceEventId}"].put
   and .paths["/merchant/v2/commerce-events/{sourceEventId}"].put
   and .paths["/merchant/v2/report"].post

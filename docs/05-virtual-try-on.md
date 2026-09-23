@@ -21,7 +21,7 @@ For a try-on gallery, `GET /shopper/v2/stylist-preview` lists every product that
 
 ## Open the product page
 
-The shopper opens the product page before trying the garment on. Keep the time: [step 7](07-collect-events.md) sends it as the `PRODUCT_VIEWED` event. In a real storefront, send that event when the page is displayed.
+The shopper opens the product page before trying the garment on. Keep the time: [step 8](08-collect-events.md) sends it as the `PRODUCT_VIEWED` event. In a real storefront, send that event when the page is displayed.
 
 ```bash
 PRODUCT_VIEWED_AT=$(now)
@@ -83,7 +83,7 @@ curl -sS "$IRISPHERA_BASE_URL/shopper/v2/td-preview/$SKU" \
   -H "Authorization: Bearer $ACCESS_TOKEN" -o td-preview.json -w 'HTTP %{http_code}\n'
 ```
 
-**Expected:** `200` with a JSON string holding a temporary download URL of the product's 3D model, or `404` or `422` when the product has no 3D model. The demo garment usually has none, so either answer is fine here. Do not store the URL. When your storefront actually displays the model, send a `TD_PREVIEW` event (step 7). Checking availability is not a display.
+**Expected:** `200` with a JSON string holding a temporary download URL of the product's 3D model, or `404` or `422` when the product has no 3D model. The demo garment usually has none, so either answer is fine here. Do not store the URL. When your storefront actually displays the model, send a `TD_PREVIEW` event (step 8). Checking availability is not a display.
 
 ## Record an image share
 

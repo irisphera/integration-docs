@@ -49,7 +49,7 @@ The Shopify, WordPress and PrestaShop integrations keep a new anonymous browser 
 - Keep only protected first-party storage or an opaque server-side handle. Never infer continuity from IP addresses, fingerprints or a customer ID supplied by the browser.
 - Keep token lifetime, identity lifetime and consent separate. A surviving identity does not allow collection after consent expiry, withdrawal, a CMP refusal or an identity reset.
 - On exactly `410` with the problem type `session_expired`, your backend may open a new session for the same identity after checking current permission. Never use an expired anonymous continuation as login proof. `identity_erased`, other `410` responses and `422` are not renewal signals.
-- Keep the acknowledged session and version captured at checkout with the order ([step 7](07-collect-events.md#choose-the-orders-subject)). Never pair a new session ID with an older consent version.
+- Keep the acknowledged session and version captured at checkout with the order ([step 8](08-collect-events.md#choose-the-orders-subject)). Never pair a new session ID with an older consent version.
 - At the 45-day limit, stop capture and retries under that identity. A later identity is new; do not reconnect its predecessor's queue or history.
 
 The 45-day limit is a technical limit. It is not a legal basis, a consent duration or a server-side retention schedule, and the merchant's notice must disclose the storage.
@@ -64,7 +64,7 @@ The 45-day limit is a technical limit. It is not a legal basis, a consent durati
 
 ## Business statistics and the shopper's choice
 
-Daily business statistics ([step 7](07-collect-events.md#daily-business-statistics)) give the merchant store-wide totals without shopper IDs. They are a separate purpose from optional analytics:
+Daily business statistics ([step 8](08-collect-events.md#daily-business-statistics)) give the merchant store-wide totals without shopper IDs. They are a separate purpose from optional analytics:
 
 - `COMMERCE` is `AVAILABLE` on every channel by default. The default policy covers the source recipe of the Irisphera Shopify app, which counts orders from the platform's order webhooks. A custom integration sends `COMMERCE` only after Irisphera confirms that its source implements the returned `sourceRecipeVersion`, or approves a recipe for it.
 - `COUNTERS` needs a separate approval for the channel. A `COMMERCE` policy does not cover it.
@@ -99,7 +99,7 @@ Two merchant routes correct stored days. Both use the server-side merchant key a
 
 Both are idempotent. They work for a channel that the organization owns even after its policy expired or the channel was deactivated; they never reactivate collection. Use deletion only when a valid rebuild is not possible.
 
-Irisphera starts the hold itself for every shopper erasure ([step 9](09-privacy-requests-and-offboarding.md#correct-daily-business-statistics)). For an objection, or an erasure your platform receives directly:
+Irisphera starts the hold itself for every shopper erasure ([step 10](10-privacy-requests-and-offboarding.md#correct-daily-business-statistics)). For an objection, or an erasure your platform receives directly:
 
 1. Record the exclusion in your source with its scope and time. Stop new inclusion and discard affected queued snapshots. Keep any order locator on your side, never in a snapshot.
 2. Restrict the affected days **before** you rebuild them. If you do not know which days are affected, agree a wider hold with Irisphera while you find out.
@@ -125,7 +125,7 @@ Agree a retention schedule before activation: purpose, necessary data, maximum d
 
 The Shopify, WordPress and PrestaShop integrations delete delivered local copies 30 days after successful delivery by default. Existing positive settings stay; zero disables this minimization without stopping collection. Pending deliveries, current restrictions, retry evidence and pending privacy work are kept. These receipts and identifiers can still be personal data and need their own finite lifetime. The merchant's own records, exports, logs, backups and processor copies remain separate responsibilities.
 
-Detailed reports cover the last 12 complete UTC months and the current month by default; `detailedAvailableFrom` gives the boundary ([step 8](08-download-report.md#older-periods)). Withdrawal, erasure, earlier expiry and missing data can reduce any period. Never present unavailable detail as zero.
+Detailed reports cover the last 12 complete UTC months and the current month by default; `detailedAvailableFrom` gives the boundary ([step 9](09-download-report.md#older-periods)). Withdrawal, erasure, earlier expiry and missing data can reduce any period. Never present unavailable detail as zero.
 
 `historicalBusinessTotals` keeps exact units, orders and gross value per currency for older complete months. It has no shopper drill-down, but its retained contributions are pseudonymous personal data, not anonymous data: withdrawal and erasure can reduce them. Do not add them to overlapping detail, treat a missing month as zero, or present gross value as revenue after refunds.
 
@@ -133,15 +133,15 @@ Treat daily business snapshots as protected statistics, not as anonymous because
 
 ## Data requests and deletion
 
-Agree a monitored support contact and an identity-verification procedure with the merchant and Irisphera before launch. [Step 9](09-privacy-requests-and-offboarding.md) shows the calls.
+Agree a monitored support contact and an identity-verification procedure with the merchant and Irisphera before launch. [Step 10](10-privacy-requests-and-offboarding.md) shows the calls.
 
 - Send exports and erasures with `POST /merchant/v2/privacy/requests` from your backend. Keep the `requestId` and the body for exact retries; another body under the same `requestId` returns `409`.
 - For a guest-order subject, send the channel captured with the order in `X-Irisphera-Channel-Id`, also when polling. Keep separate requests when the same order number exists on different channels, and never substitute the current installation's channel.
 - `202` and `PENDING` mean accepted, not done. Report an erasure as complete only when `status` is `COMPLETED`, and name what is still pending in the meantime.
 - An erasure blocks the erased identity from new sessions (`410 identity_erased`). Handle it as an unavailable feature for that account.
-- An erasure holds back the organization's daily business statistics until your source adapter has corrected them ([step 9](09-privacy-requests-and-offboarding.md#correct-daily-business-statistics)).
+- An erasure holds back the organization's daily business statistics until your source adapter has corrected them ([step 10](10-privacy-requests-and-offboarding.md#correct-daily-business-statistics)).
 - Keep the credentials and delivery workers needed to finish pending requests. Do not remove them on uninstall or disconnect while work remains.
-- Removing an organization is an erasure of all its data, tracked with the integrator key ([step 9](09-privacy-requests-and-offboarding.md#remove-a-merchant-organization)).
+- Removing an organization is an erasure of all its data, tracked with the integrator key ([step 10](10-privacy-requests-and-offboarding.md#remove-a-merchant-organization)).
 
 `DELETE /shopper/v2/session` and `DELETE /merchant/v2/shopper-sessions/{sessionId}` end a session; they do not erase data. Clearing browser storage, hashing identifiers or downloading a report is not a substitute for a data request.
 
