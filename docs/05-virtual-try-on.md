@@ -4,7 +4,7 @@ Previous: [Open a shopper session](04-shopper-session.md) · [Integration guide]
 
 **Goal:** check that the product can be tried on, generate a try-on image from the test participant's photo, check for a 3D model, and record that the shopper saved the image.
 
-The browser calls these routes with the shopper token. Try-on and 3D preview need the `shopper:vto` scope from [step 4](04-shopper-session.md#check-the-session). Image shares need `shopper:events`.
+The browser calls these routes with the shopper token. Try-on and the 3D preview need the `shopper:vto` scope from [step 4](04-shopper-session.md#check-the-session). Image shares need `shopper:events`.
 
 ## Check that the product can be tried on
 
@@ -65,7 +65,11 @@ jq '{productPageUrl, hasFeaturedImage:(.featuredImage != null), hasResultUrl:(.r
 
 ### What Irisphera records
 
-Irisphera records the outcome of every try-on itself: success, failure, or unusable input. It records it only when the shopper grants `analytics` at that moment. Without analytics, the try-on still works and nothing is recorded. **Do not send a `VIRTUAL_TRY_ON` event** for the same attempt: it would count twice. The report counts successful, failed and unusable-input try-ons separately; only a successful one can take part in purchase attribution. Quota is used only when a try-on succeeds. A token keeps its scopes until it expires, even if quota runs out meanwhile, so check `isVtoEnabled` ([step 2](02-create-merchant.md#manage-your-organizations)) before you offer the try-on.
+The try-on route records the outcome of every try-on itself: success, failure or unusable input. It does so only when the shopper grants `analytics` at that moment. Without analytics, the try-on still works and nothing is recorded.
+
+- **Do not send a `VIRTUAL_TRY_ON` event** for the same attempt. It would count twice.
+- The report counts successful, failed and unusable-input try-ons separately. Only a successful one can take part in purchase attribution.
+- Only a successful try-on uses quota. A token keeps its scopes until it expires, even if quota runs out in the meantime, so check `isVtoEnabled` ([step 2](02-create-merchant.md#read-the-storefront-configuration)) before you offer the try-on.
 
 ### Other try-on routes
 
@@ -133,3 +137,21 @@ It returns the same image format, records nothing and uses no quota. It is for t
 The photo goes to Irisphera's servers and processing providers, and Irisphera stores the generated result. Your notice must say so. Read [photo and recording handling](privacy-and-consent.md#photo-and-recording-handling) before real shoppers upload photos.
 
 **Checkpoint:** `try-on.webp` shows the garment on the participant, and the image share returned `201`. Keep `PRODUCT_VIEWED_AT` and `PHOTO_PATH`. Continue to [step 6](06-recommendations.md).
+
+## Frequently asked questions
+
+### Where should the storefront decide to show the try-on button?
+
+In your backend, from two reads that use no quota and need no shopper session: `isVtoEnabled` in the [storefront configuration](02-create-merchant.md#read-the-storefront-configuration) and the product's [`vtoReadiness`](03-ingest-products.md#confirm-try-on-readiness). Show the button when both allow it. The shopper token's `shopper:vto` scope is the last check.
+
+### Does a failed try-on use quota?
+
+No. Only a successful try-on uses a unit. After a `420` or `422`, the shopper can try another photo without using quota.
+
+### Does try-on work without the analytics choice?
+
+Yes. The try-on works the same. Irisphera only leaves out the outcome record, so that try-on does not count in the report and cannot take part in purchase attribution.
+
+### Can we keep the generated image?
+
+It shows the shopper, so it is personal data. Keep it only if your privacy notice covers it, and only as long as the shopper needs it. `resultUrl` stops working after 24 hours, so never store it as a lasting link.

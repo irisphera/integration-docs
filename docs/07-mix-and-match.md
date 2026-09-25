@@ -8,21 +8,55 @@ Mix and match takes one SKU. For each outfit placement that the garment does not
 
 ## Add a product that completes the outfit
 
-The walkthrough's catalog holds only the garment from step 3, so mix and match has nothing to suggest yet. Import one more product into the same collection, for another placement, such as trousers or shoes. Choose one for the same occasion as the garment, such as tailored trousers for a blazer, and give it the garment's gender or `UNISEX`. Change the example title, description, gender and price to match the product.
+The walkthrough's catalog holds only the garment from step 3, so mix and match has nothing to suggest yet. Import one more product into the same collection, for another placement, such as trousers or shoes. Choose one for the same occasion as the garment, such as tailored trousers for a blazer, and give it the garment's gender or `UNISEX`.
 
 ```bash
 MATCH_SKU='DEMO-TROUSERS-BLACK'
-read -rp 'Front image URL of the matching product: ' MATCH_FRONT_IMAGE_URL
-read -rp 'Back image URL: ' MATCH_BACK_IMAGE_URL
-read -rp 'Featured image URL: ' MATCH_FEATURED_IMAGE_URL
+read -rp 'Main image URL of the matching product (becomes the featured image): ' MATCH_MAIN_IMAGE_URL
+read -rp 'Second image URL, for example the back view: ' MATCH_SECOND_IMAGE_URL
 read -rp 'Product page URL: ' MATCH_PRODUCT_PAGE_URL
-jq -n --arg sku "$MATCH_SKU" --arg front "$MATCH_FRONT_IMAGE_URL" --arg back "$MATCH_BACK_IMAGE_URL" \
-  --arg featured "$MATCH_FEATURED_IMAGE_URL" --arg page "$MATCH_PRODUCT_PAGE_URL" \
+```
+
+Import it with the method you used in [step 3](03-ingest-products.md#choose-how-to-send-products). In each example, change the title, description, gender and price to match the product.
+
+**Method A or B (feed).** Add the product to `products.json`. Keep the garment in the feed. It is already in the collection and unchanged, so the import [leaves it as it is](03-ingest-products.md#importing-again).
+
+```bash
+jq --arg sku "$MATCH_SKU" --arg main "$MATCH_MAIN_IMAGE_URL" --arg second "$MATCH_SECOND_IMAGE_URL" \
+  --arg page "$MATCH_PRODUCT_PAGE_URL" \
+  '.products += [{skuCustomId:$sku, title:"Black tailored trousers",
+    description:"High-waisted wool trousers with a straight leg.", gender:"WOMEN", price:"79.00 EUR",
+    product_images:[$main,$second], product_page_url:$page}]' products.json > products-next.json
+mv products-next.json products.json
+```
+
+For method A, publish the new `products.json` at `FEED_URL` in place of the old one, and send the import request again:
+
+```bash
+curl --fail-with-body -sS \
+  "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/import-from-url" \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data-binary @import-request.json -w 'HTTP %{http_code}\n'
+```
+
+For method B, upload the file again:
+
+```bash
+curl --fail-with-body -sS \
+  "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/file?useSeasonFiltering=false" \
+  -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" \
+  -F 'file=@products.json;type=application/json'
+```
+
+**Method C (single product).** Send the product on its own:
+
+```bash
+jq -n --arg sku "$MATCH_SKU" --arg main "$MATCH_MAIN_IMAGE_URL" --arg second "$MATCH_SECOND_IMAGE_URL" \
+  --arg page "$MATCH_PRODUCT_PAGE_URL" \
   '{skuCustomId:$sku, title:"Black tailored trousers",
     description:"High-waisted wool trousers with a straight leg.", gender:"WOMEN", price:"79.00 EUR",
-    productFrontImage:$front, productBackImage:$back,
-    productImages:[$front,$back], productFeaturedImage:$featured,
-    productPageUrl:$page}' > match-product.json
+    productImages:[$main,$second], productPageUrl:$page}' > match-product.json
 curl --fail-with-body -sS "$IRISPHERA_BASE_URL/merchant/v1/collection/$COLLECTION_ID/products" \
   -H "MERCHANT-API-KEY: $MERCHANT_API_KEY" \
   -H 'Content-Type: application/json' \
@@ -43,7 +77,7 @@ else
 fi
 ```
 
-**Expected:** the product with a detected `placement` that the garment does not fill, for example `LOWER` for trousers. The import uses feature-detection quota like any other import. A real store needs no extra import: mix and match uses the whole catalog.
+**Expected:** the product with a detected `placement` that the garment does not fill, for example `LOWER` for trousers. A real store needs no extra import: mix and match uses the whole catalog.
 
 ## Get the suggestions
 
@@ -107,7 +141,7 @@ A feature that Irisphera could not detect on one of the products counts as neutr
 
 ## Show the suggestions in your storefront
 
-- Offer mix and match only while the token has `shopper:recommendations`. Check `isApsEnabled` ([step 2](02-create-merchant.md#manage-your-organizations)) as you do for recommendations.
+- Offer mix and match only while the token has `shopper:recommendations`. Check `isApsEnabled` ([step 2](02-create-merchant.md#read-the-storefront-configuration)) as you do for recommendations.
 - The request uses no quota, so the product page can make it when it opens.
 - Show each item as a product card that links to its `productPageUrl`, or to your own product page for its `skuCustomId`. Hide the placements that are missing.
 - When the shopper opens a suggested product, its page sends the usual `PRODUCT_VIEWED` event ([step 8](08-collect-events.md)). There is no separate mix-and-match event.
@@ -117,3 +151,13 @@ A feature that Irisphera could not detect on one of the products counts as neutr
 Nothing. Mix and match reads only the catalog. It works the same whatever the shopper chose in [step 4](04-shopper-session.md#record-the-shoppers-privacy-choices), and the report has no mix-and-match section.
 
 **Checkpoint:** `mix-and-match.json` lists the product that you imported in this step, with a placement that the garment does not fill. Continue to [step 8](08-collect-events.md).
+
+## Frequently asked questions
+
+### Can we cache the suggestions?
+
+Yes. Every shopper gets the same answer for the same SKU until the catalog changes, so your backend can cache it for each SKU and refresh it after an import. Request it with `generatePresignedUrl=false` and show your own product images, because the temporary image URLs expire.
+
+### Can we leave out products, such as ones that are out of stock?
+
+Not in the request. Irisphera has no stock information and suggests any product in the catalog. Filter the answer in your storefront before you show it. When you hide a suggestion, the placement stays empty: Irisphera returns only one product for each placement.

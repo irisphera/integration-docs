@@ -24,7 +24,7 @@ jq '{organizationName, reportingPeriod, collectionSource, resolutionMode,
 
 ## Reconcile the walkthrough
 
-For a new organization and exactly the actions of steps 5 to 7:
+For a new organization and exactly the actions of steps 5 to 8, the report should show:
 
 | Measure | Expected | Why |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ These figures cover only shoppers who granted `analytics`. They are not all visi
 
 ## Daily business statistics in the report
 
-`merchantBusinessAnalytics` reports the [daily business statistics](08-collect-events.md#daily-business-statistics), separately from the figures above:
+`merchantBusinessAnalytics` reports the [daily business statistics](business-statistics.md), separately from the figures above:
 
 ```bash
 jq '.merchantBusinessAnalytics | {commerce:{status:.commerce.status, reasons:.commerce.reasons},
@@ -143,3 +143,22 @@ Detailed figures cover a limited window: by default the last 12 complete UTC mon
 A missing month is unknown, not zero. Do not add archived months to detailed figures, and do not add up monthly shopper ranges across months. A withdrawal or an erasure can reduce detailed figures for any period, so a report downloaded later can show less.
 
 **Checkpoint:** the reconciliation check prints `true`, and the attributed values match. Continue to [step 10](10-privacy-requests-and-offboarding.md).
+
+## Frequently asked questions
+
+### Can we get a report for one channel or one collection?
+
+No. The report always covers the whole organization. Its request takes only `startTime`, `endTime` and `zone`. Use separate organizations for stores whose figures you want to see apart ([step 2](02-create-merchant.md#should-each-brand-or-country-be-its-own-organization)).
+
+### Why is a purchase not attributed to the try-on?
+
+The purchase and the try-on did not meet the [attribution rule](#read-the-attribution). The usual causes:
+
+- The order names another shopper than the try-on. For example, the shopper tried the product on anonymously, and the sign-in did not link the anonymous history (`NOT_REQUESTED` in [step 4](04-shopper-session.md#sign-the-shopper-in)).
+- The order line has another SKU or channel than the try-on.
+- The try-on failed, or Irisphera did not record it because the shopper had not granted `analytics` at that moment.
+- The try-on was more than `lookbackDays` before the purchase, or after it.
+
+### Why do the figures of a past period go down?
+
+A withdrawal or an erasure can remove a shopper's activity from any period, including closed ones. Detail older than `detailedAvailableFrom` is also no longer returned ([older periods](#older-periods)). Download the report again when you need current figures, rather than adding up reports that you saved earlier.

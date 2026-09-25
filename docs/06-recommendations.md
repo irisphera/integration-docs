@@ -6,7 +6,12 @@ Previous: [Virtual try-on](05-virtual-try-on.md) · [Integration guide](../READM
 
 These routes need the `shopper:recommendations` scope from [step 4](04-shopper-session.md#check-the-session). The organization's `flowConfig.recommendationCriteria` ([step 2](02-create-merchant.md#create-the-organization)) decides which analyses a recommendation includes: palette, silhouette, sizing, all of them, or none.
 
-A recommendation needs a **profile**: the shopper's gender, and body measurements, colors or both. The storefront builds it from the shopper's answers or from the two estimation routes below.
+A recommendation needs a **profile**: the shopper's gender, plus body measurements, colors or both. The storefront builds the profile from the shopper's answers, or from the two estimation routes below. This page uses the estimation routes:
+
+1. Estimate body measurements from a full-body photo.
+2. Extract skin, eye and hair colors from a selfie.
+3. Put both into a profile.
+4. Send the profile and get recommended products with sizes.
 
 ## Estimate body measurements
 
@@ -99,7 +104,7 @@ Rules for recommendation requests:
 - Each request uses one unit of recommendation quota. Request recommendations when the shopper asks for them, not on every page load.
 - The contract lists `offset`, `limit` and `collectionIds`, but Irisphera currently ignores them. Do not rely on them.
 - Omit `filters` unless you have agreed filter values with Irisphera.
-- A `403` means the token has no `shopper:recommendations` scope: hide the recommendation entry point. Check `isApsEnabled` ([step 2](02-create-merchant.md#manage-your-organizations)) before offering it.
+- A `403` means the token has no `shopper:recommendations` scope: hide the recommendation entry point. Check `isApsEnabled` ([step 2](02-create-merchant.md#read-the-storefront-configuration)) before offering it.
 
 ## What Irisphera records
 
@@ -113,3 +118,17 @@ The recommendation itself works whatever the shopper chose in [step 4](04-shoppe
 A withdrawal applies from the next request. Irisphera checks the choice again for every request.
 
 **Checkpoint:** `recommendations.json` lists recommended SKUs. Continue to [step 7](07-mix-and-match.md).
+
+## Frequently asked questions
+
+### Do shoppers have to upload photos to get recommendations?
+
+No. The profile holds body measurements, colors or both, and the shopper can type the measurements and choose the colors in your storefront. The two photo routes are only one way to fill in the profile.
+
+### Why is the silhouette, palette or sizing missing from the answer?
+
+Each analysis needs its input, and the organization's `recommendationCriteria` must include it. Silhouette and sizing need `bodyMeasurements`. The palette needs `colorProfile`.
+
+### Why is a product never recommended?
+
+A product appears in recommendation results only when it is listed and has a product page URL ([product rules](03-ingest-products.md#product-rules)). Products that you no longer sell can still appear, because imports never remove products. Filter the results against your own catalog ([step 3](03-ingest-products.md#how-do-we-remove-a-product-that-we-no-longer-sell)).

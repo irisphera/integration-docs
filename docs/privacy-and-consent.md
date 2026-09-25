@@ -44,15 +44,15 @@ Shopper tokens last 30 minutes. Token expiry and session revocation do not end a
 
 ### Browser identity is not consent
 
-The Shopify, WordPress and PrestaShop integrations keep a new anonymous browser identity for a fixed 45 days from its first issue. Visits, token refreshes and consent acknowledgments do not extend it. A custom integration should use a comparable fixed limit.
+Create each anonymous browser identity as a new UUIDv7, and give it a fixed lifetime from its first issue, such as 45 days. Visits, token refreshes and consent acknowledgments do not extend it.
 
 - Keep only protected first-party storage or an opaque server-side handle. Never infer continuity from IP addresses, fingerprints or a customer ID supplied by the browser.
 - Keep token lifetime, identity lifetime and consent separate. A surviving identity does not allow collection after consent expiry, withdrawal, a CMP refusal or an identity reset.
 - On exactly `410` with the problem type `session_expired`, your backend may open a new session for the same identity after checking current permission. Never use an expired anonymous continuation as login proof. `identity_erased`, other `410` responses and `422` are not renewal signals.
 - Keep the acknowledged session and version captured at checkout with the order ([step 8](08-collect-events.md#choose-the-orders-subject)). Never pair a new session ID with an older consent version.
-- At the 45-day limit, stop capture and retries under that identity. A later identity is new; do not reconnect its predecessor's queue or history.
+- At the end of that lifetime, stop capture and retries under that identity. A later identity is new; do not reconnect its predecessor's queue or history.
 
-The 45-day limit is a technical limit. It is not a legal basis, a consent duration or a server-side retention schedule, and the merchant's notice must disclose the storage.
+That lifetime is a technical limit. It is not a legal basis, a consent duration or a server-side retention schedule, and the merchant's notice must disclose the storage.
 
 ### Withdrawal, retries and identity changes
 
@@ -64,9 +64,9 @@ The 45-day limit is a technical limit. It is not a legal basis, a consent durati
 
 ## Business statistics and the shopper's choice
 
-Daily business statistics ([step 8](08-collect-events.md#daily-business-statistics)) give the merchant store-wide totals without shopper IDs. They are a separate purpose from optional analytics:
+[Daily business statistics](business-statistics.md) give the merchant store-wide totals without shopper IDs. They are a separate purpose from optional analytics:
 
-- `COMMERCE` is `AVAILABLE` on every channel by default. The default policy covers the source recipe of the Irisphera Shopify app, which counts orders from the platform's order webhooks. A custom integration sends `COMMERCE` only after Irisphera confirms that its source implements the returned `sourceRecipeVersion`, or approves a recipe for it.
+- `COMMERCE` is `AVAILABLE` on every channel by default. The default policy names a source recipe that Irisphera defined for its own sources. Send `COMMERCE` only after Irisphera confirms that your source implements the returned `sourceRecipeVersion`, or approves a recipe for it.
 - `COUNTERS` needs a separate approval for the channel. A `COMMERCE` policy does not cover it.
 - Read `businessStatistics` from the collection context each time. A missing field, `NOT_APPROVED`, `NOT_YET_EFFECTIVE`, `EXPIRED` or `RESTRICTED` means do not collect or send. Collect only from `effectiveFrom`: no backfill of older orders, and no reuse of events that the optional analytics route refused.
 - The policy belongs to its channel and dataset. One installation's policy never covers another.
@@ -121,9 +121,9 @@ Upload only catalog content the merchant may provide, and keep shopper photos an
 
 ## Retention and historical reports
 
-Agree a retention schedule before activation: purpose, necessary data, maximum duration, the event that starts the clock, and earlier deletion triggers. Configure server data, local delivery copies and evidence separately. Token expiry and the 45-day identity limit are not retention schedules.
+Agree a retention schedule before activation: purpose, necessary data, maximum duration, the event that starts the clock, and earlier deletion triggers. Configure server data, local delivery copies and evidence separately. Token expiry and the identity lifetime are not retention schedules.
 
-The Shopify, WordPress and PrestaShop integrations delete delivered local copies 30 days after successful delivery by default. Existing positive settings stay; zero disables this minimization without stopping collection. Pending deliveries, current restrictions, retry evidence and pending privacy work are kept. These receipts and identifiers can still be personal data and need their own finite lifetime. The merchant's own records, exports, logs, backups and processor copies remain separate responsibilities.
+Delete your integration's local copies of delivered events after a fixed period, such as 30 days after successful delivery. Keep pending deliveries, current restrictions, retry evidence and pending privacy work. These receipts and identifiers can still be personal data and need their own finite lifetime. The merchant's own records, exports, logs, backups and processor copies remain separate responsibilities.
 
 Detailed reports cover the last 12 complete UTC months and the current month by default; `detailedAvailableFrom` gives the boundary ([step 9](09-download-report.md#older-periods)). Withdrawal, erasure, earlier expiry and missing data can reduce any period. Never present unavailable detail as zero.
 
@@ -135,7 +135,7 @@ Treat daily business snapshots as protected statistics, not as anonymous because
 
 Agree a monitored support contact and an identity-verification procedure with the merchant and Irisphera before launch. [Step 10](10-privacy-requests-and-offboarding.md) shows the calls.
 
-- Send exports and erasures with `POST /merchant/v2/privacy/requests` from your backend. Keep the `requestId` and the body for exact retries; another body under the same `requestId` returns `409`.
+- Send exports and erasures with `POST /merchant/v2/privacy/requests` from your backend. Give each request a new UUIDv7 as its `requestId`, and keep it with the body for exact retries. Another body under the same `requestId` returns `409`.
 - For a guest-order subject, send the channel captured with the order in `X-Irisphera-Channel-Id`, also when polling. Keep separate requests when the same order number exists on different channels, and never substitute the current installation's channel.
 - `202` and `PENDING` mean accepted, not done. Report an erasure as complete only when `status` is `COMPLETED`, and name what is still pending in the meantime.
 - An erasure blocks the erased identity from new sessions (`410 identity_erased`). Handle it as an unavailable feature for that account.
@@ -145,14 +145,14 @@ Agree a monitored support contact and an identity-verification procedure with th
 
 `DELETE /shopper/v2/session` and `DELETE /merchant/v2/shopper-sessions/{sessionId}` end a session; they do not erase data. Clearing browser storage, hashing identifiers or downloading a report is not a substitute for a data request.
 
-## Platform wiring
+## Connect your platform
 
-- **Shopify:** require explicit analytics and marketing choices in the Customer Privacy API, with its current processing allowances, before acknowledging analytics on ordinary visits. Do not change Shopify's tracking consent automatically. Unknown host permission stays denied; personalization and QA recording stay separate choices.
-- **WordPress/WooCommerce:** connect the merchant CMP through the plugin's consent adapter. Apply withdrawal to the storefront bridge and queued deliveries. Use the plugin's privacy export and erasure hooks and track pending work.
-- **PrestaShop:** connect the configured CMP adapter to the actual consent-change events. Apply choices to guest and signed-in sessions, browser capture and server queues.
-- **Custom integration:** enforce choices in the storefront, in participating iframes and in your backend, not only in the consent dialog.
+- Enforce the shopper's choices in the storefront, in participating iframes and in your backend, not only in the consent dialog.
+- Connect your CMP's consent-change events to the preference API. Apply each change to guest and signed-in sessions, browser capture and server queues.
+- Do not change the CMP's own consent state automatically. A permission that the CMP does not report stays denied, and personalization and QA recording stay separate choices.
+- Connect your platform's privacy export and erasure processes to Irisphera [data requests](#data-requests-and-deletion), and track pending work.
 
-Installing a plugin or resolving the collection context does not grant consent. Merchant configuration never overrides a shopper's refusal.
+Resolving the collection context does not grant consent. Merchant configuration never overrides a shopper's refusal.
 
 ## Acceptance scenarios before enterprise activation
 
@@ -177,3 +177,17 @@ Run these with synthetic shoppers and an isolated test organization:
 17. **Report populations:** event figures, business totals and historical archives are kept apart; partial and missing days stay visible; no store-wide conversion rate is computed from opt-in figures, and attribution is not presented as proof of cause.
 
 Confirm the merchant's notice, the configured choices, the source recipe, retention and the support handoff before real shoppers use the integration. Passing these tests does not replace that evidence or activate a feature.
+
+## Frequently asked questions
+
+### Does Irisphera replace our consent banner or CMP?
+
+No. Your banner or CMP asks the shopper. The [preference API](#record-choices-through-the-preference-api) records the answer, so that Irisphera applies it too. Keep your CMP as the place where shoppers change their choices.
+
+### Does try-on need one of the three choices?
+
+No. Try-on and recommendations work without `analytics`, `personalization` or `qaRecording`. The choices only decide what Irisphera records. Your notice must still explain the photo processing before the shopper uploads a photo, and the permitted processing is agreed with the merchant and Irisphera ([before sending any real shopper data](#before-sending-any-real-shopper-data)).
+
+### Who answers a shopper's request for their data?
+
+Your support process. It verifies the person, and your backend sends the export or erasure to Irisphera ([step 10](10-privacy-requests-and-offboarding.md)). Irisphera answers for the data it holds, and your store answers for its own systems.

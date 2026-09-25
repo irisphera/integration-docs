@@ -10,7 +10,7 @@ A shopper asks the store for a copy or the erasure of their data. Your support p
 
 | Subject | Body | Use it for |
 | --- | --- | --- |
-| Customer | `{"externalIdentity":{"namespace":"<customer namespace>","kind":"CUSTOMER","externalId":"<customer ID>"}}` | A customer account, by the platform customer ID. The walkthrough uses this. |
+| Customer | `{"externalIdentity":{"namespace":"<customer namespace>","kind":"CUSTOMER","externalId":"<customer ID>"}}` | A customer account, by its UUIDv7 customer ID. The walkthrough uses this. |
 | Anonymous browser | `{"externalIdentity":{"namespace":"<anonymous namespace>","kind":"ANONYMOUS","externalId":"<anonymous ID>"}}` | An anonymous ID that your backend still holds for the person |
 | Irisphera shopper | `{"shopperId":"…","identityVersion":…}` | A shopper known by the `shopperId` and `identityVersion` of a session response. A `409` means the identity changed since, for example through an account link: use the version from a newer session. |
 | Guest order | `{"orderGuest":{"sourceOrderId":"<order ID>"}}` | The shopper of a guest order sent with an `orderGuest` subject in [step 8](08-collect-events.md#choose-the-orders-subject) |
@@ -19,7 +19,7 @@ A customer, anonymous or shopper request covers the whole organization, includin
 
 ## Export the shopper's data
 
-Save the request, with a new `requestId`, before you send it:
+Save the request, with a new UUIDv7 as its `requestId`, before you send it:
 
 ```bash
 EXPORT_REQUEST_ID=$(uuid)
@@ -134,7 +134,7 @@ The erasure is complete only when `status` is `COMPLETED`. Until then, tell the 
 
 Daily snapshots contain no shopper IDs, so Irisphera cannot find a shopper's orders in them. After an erasure it holds back the business days that may contain them: for each channel with daily business statistics, from `effectiveFrom`, or from the start of the `aggregateRetentionDays` period if later, up to the day of the request. A customer, anonymous or shopper erasure holds every channel of the organization; a guest-order erasure holds only the order's channel. Reports leave the held days out, with the reason `BUSINESS_SOURCE_RECONCILIATION_PENDING`, and the request lists `merchant-business-source`, until the correction is done.
 
-`COMMERCE` is available by default on every channel ([step 8](08-collect-events.md#daily-business-statistics)), so every erasure starts this correction. Your source adapter does it:
+`COMMERCE` is available by default on every channel ([daily business statistics](business-statistics.md)), so every erasure starts this correction. Your source adapter does it:
 
 1. Exclude the shopper from your source: later snapshots leave the shopper's orders out. Discard queued snapshots built before the exclusion.
 2. Look up the shopper's orders in your platform for the held period.
@@ -180,3 +180,21 @@ unset INTEGRATOR_API_KEY MERCHANT_API_KEY
 Delete or return the participant's photo and selfie as you agreed with the participant, and close the terminal.
 
 **Checkpoint:** the export returned the shopper's data, both erasures are accepted and tracked, the report no longer shows the walkthrough's activity, and you know which requests are still pending. The walkthrough is complete. Before real shoppers use the integration, go through the [privacy and consent requirements](privacy-and-consent.md) and their [acceptance scenarios](privacy-and-consent.md#acceptance-scenarios-before-enterprise-activation).
+
+## Frequently asked questions
+
+### How long does an erasure take?
+
+Every session of the shopper ends at once, and Irisphera deletes the database records first: `local-database` leaves `pendingSystems` when that is done. The other systems follow, and the request stays `PENDING` until `pendingSystems` is empty. Check the request once a day, and tell the person that the erasure is in progress until `status` is `COMPLETED`.
+
+### Which subject do we erase when we are unsure?
+
+Every identity that you still hold for the person: the customer ID, and any anonymous ID or guest order that is not linked to it. An erasure of a linked customer also covers the anonymous history linked to it. An erasure of an ID that Irisphera never saw still blocks that ID from future sessions, so send erasures only for IDs that belong to the person.
+
+### Is ending the session or a withdrawal the same as an erasure?
+
+No. Ending a session only stops its token. A withdrawal stops optional processing from then on ([step 4](04-shopper-session.md#record-the-shoppers-privacy-choices)). To delete the shopper's data, send an erasure. Keep the three actions separate, as the [privacy requirements](privacy-and-consent.md#withdrawal-retries-and-identity-changes) ask.
+
+### Does disconnecting our integration delete anything?
+
+No. Irisphera does not notice when you stop calling it. The organization and its data stay, under the agreed retention, until you remove the organization with the integrator key ([remove a merchant organization](#remove-a-merchant-organization)). Send pending privacy requests first, because the merchant key stops working at once.
