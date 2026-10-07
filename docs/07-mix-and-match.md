@@ -4,11 +4,11 @@ Previous: [Recommendations and sizing](06-recommendations.md) · [Integration gu
 
 **Goal:** show the shopper the catalog products that complete an outfit with the garment on the product page.
 
-Mix and match takes one SKU and returns ranked outfits built around it from the organization's catalog. For a blazer, an outfit can add trousers, shoes, a bag, and so on. The answer holds up to 10 outfits, best first. Every shopper token can call the route: it needs only the `shopper:session` scope from [step 4](04-shopper-session.md#check-the-session), and it uses no quota. It needs no profile, photo or privacy choice: it compares products, not the shopper.
+Mix and match takes one SKU and returns ranked outfits built around it from the organization's catalog. For a blazer, an outfit can add trousers, shoes, a bag, and so on. The answer holds up to 5 outfits, best first. Every shopper token can call the route: it needs only the `shopper:session` scope from [step 4](04-shopper-session.md#check-the-session), and it uses no quota. It needs no profile, photo or privacy choice: it compares products, not the shopper.
 
 ## Add a product that completes the outfit
 
-The walkthrough's catalog holds only the garment from step 3, so mix and match has nothing to suggest yet. Import one more product into the same collection, for another placement, such as trousers or shoes. Choose one for the same occasion as the garment, such as tailored trousers for a blazer, and give it the garment's gender or `UNISEX`.
+The walkthrough's catalog holds only the garment from step 3, so mix and match has nothing to suggest yet. Import one more product into the same collection, for another placement, such as trousers or shoes. Choose one for the same occasion as the garment, such as tailored trousers for a blazer, and give it the garment's gender: mix and match combines only products of the same gender.
 
 ```bash
 MATCH_SKU='DEMO-TROUSERS-BLACK'
@@ -129,17 +129,17 @@ Irisphera first tries to build ranked outfits around the garment. When it cannot
 
 ### Outfits
 
-Irisphera builds outfits when the garment is a women's or unisex top, bottom, one-piece item such as a dress, outerwear, or pair of shoes.
+Irisphera builds outfits when the garment is a top, a bottom, a one-piece item such as a dress, outerwear, or a pair of shoes. This holds for every gender: `MEN`, `WOMEN`, `UNISEX`, `CHILDREN_GIRL` and `CHILDREN_BOY`.
 
-- It builds up to 10 outfits around the garment. Each outfit holds a top and a bottom, or a one-piece item. It can add shoes, outerwear, a bag and an accessory. Outfits hold only women's and unisex products.
-- It needs at least ten candidate products for each part that an outfit must have, such as ten bottoms for a top. It adds an optional part, such as shoes, only when the catalog holds at least ten candidates for it.
+- It builds up to 5 outfits around the garment. Each outfit holds a top and a bottom, or a one-piece item. It can add shoes, outerwear, a bag and an accessory. Outfits hold only products of the garment's gender. A `UNISEX` garment gets `UNISEX` products only, and the outfits of a `WOMEN` or `MEN` garment hold no `UNISEX` product.
+- It needs at least five products of the garment's gender for each part that an outfit must have, such as five bottoms for a top. It adds an optional part, such as shoes, only when the catalog holds at least five products for it.
 - A learned model compares the product images of each pair of products. Rules for color, style, occasion, pattern, fabric and season complete the outfit's `score`.
 - Irisphera prefers variety. An outfit that repeats products of a better outfit moves down, so an outfit can have a higher `score` than the outfit above it. A product can still appear in more than one outfit.
 - `matchScore` is the learned model's probability that the product goes with the garment. When the model does not compare the two kinds of product, such as shoes and a bag, it is the mean of the rule scores for color, style, occasion, pattern, fabric and season.
 
 ### Rules
 
-Irisphera uses rules when the garment is any other product, such as a men's product or a bag. It also uses them when it cannot build an outfit, for example because it has not analyzed the product images yet. The rules build one outfit with at most one product for each placement that the garment does not fill, and `source` is `RULES`. The outfit's `score` is the mean `matchScore` of its products.
+Irisphera uses rules when the garment is any other product, such as a bag or a belt. It also uses them when it cannot build an outfit, for example because it has not analyzed the product images yet or because the catalog holds too few products of the garment's gender. The rules build one outfit with at most one product for each placement that the garment does not fill, and `source` is `RULES`. The outfit's `score` is the mean `matchScore` of its products.
 
 The garment's placement decides which placements the answer can hold:
 
@@ -153,7 +153,7 @@ The garment's placement decides which placements the answer can hold:
 A product qualifies when all of these are true:
 
 - It is in one of the organization's collections, and it is not the garment itself.
-- Its gender is the garment's gender. `UNISEX` also goes with `MEN` and `WOMEN`. `CHILDREN_GIRL` and `CHILDREN_BOY` products go only with the same gender.
+- Its gender is the garment's gender. `UNISEX` goes only with `UNISEX`, and `CHILDREN_GIRL` and `CHILDREN_BOY` go only with the same gender.
 - Swimwear and underwear go only with garments of the same category: a bikini top gets a bikini bottom, never jeans. They can still get shoes, bags and jewelry.
 - Its match score is at least 0.4.
 
