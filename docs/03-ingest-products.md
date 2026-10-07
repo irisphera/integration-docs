@@ -374,6 +374,8 @@ fi
 
 **Expected:** the SKU with its detected `placement`, for example `UPPER`, and `category`. There is no deadline for processing. While the SKU is absent, [the import's state](#follow-or-cancel-an-import) tells you whether it is still running. If the SKU is still absent once the state is `IDLE`, Irisphera did not import it: ask Irisphera to check the import. Irisphera may skip a SKU that has failed several times, so sending it again does not always help. An empty catalog is not a working integration. `GET /merchant/v1/products` lists products across all your collections.
 
+Irisphera names the `category` from the product images, title and description; a category in your feed is ignored. The value is one of `tops`, `shirt`, `jacket`, `pants`, `jeans`, `trousers`, `joggers`, `shorts`, `skirt`, `dress`, `jumpsuit`, `romper`, `flowing`, `suit`, `set`, `swimwear`, `underwear`, `sleepwear`, `hosiery`, `headwear`, `shoes`, `accessories`, `earrings`, `necklaces`, `bracelets`, `rings`, `watches` or `unclassified`. Socks and tights are `hosiery`; pajamas, nightgowns and bathrobes are `sleepwear`; leggings are `pants`. `unclassified` means Irisphera could not name a category: the product stays in your catalog, but it is not used for try-on, recommendations or mix and match. Hosiery is not used for try-on, recommendations or mix and match either, and sleepwear is not used for try-on or mix and match.
+
 ## Confirm try-on readiness
 
 A listed product is not necessarily ready for try-on. Your backend can check readiness with the merchant key, without a shopper session:

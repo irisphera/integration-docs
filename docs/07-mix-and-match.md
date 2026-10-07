@@ -8,7 +8,7 @@ Mix and match takes one SKU and returns ranked outfits built around it from the 
 
 ## Add a product that completes the outfit
 
-The walkthrough's catalog holds only the garment from step 3, so mix and match has nothing to suggest yet. Import one more product into the same collection, for another placement, such as trousers or shoes. Choose one for the same occasion as the garment, such as tailored trousers for a blazer, and give it the garment's gender: mix and match combines only products of the same gender.
+The walkthrough's catalog holds only the garment from step 3, so mix and match has nothing to suggest yet. Import one more product into the same collection, for another placement, such as trousers or shoes. Choose one for the same occasion as the garment, such as tailored trousers for a blazer, and give it the garment's gender: mix and match combines only products of the same gender. One product is enough to check the call; an outfit needs a larger catalog (see [outfits](#outfits)).
 
 ```bash
 MATCH_SKU='DEMO-TROUSERS-BLACK'
@@ -93,15 +93,15 @@ jq '{source, outfits: [.outfits[] | {rank, score, items: [.items[] | {placement,
   mix-and-match.json
 ```
 
-**Expected:** HTTP `200` with a JSON object whose first outfit holds the trousers as a `LOWER` item. In the walkthrough, `source` is `RULES` and there is one outfit: Irisphera builds ranked outfits only from a larger catalog (see [outfits](#outfits)).
+**Expected:** HTTP `200` with a JSON object whose `source` is `ENGINE`. In the walkthrough, `outfits` is empty: Irisphera builds outfits only from a larger catalog, with at least five products of the garment's gender for each part that an outfit must have (see [outfits](#outfits)). With such a catalog, the trousers can appear as a `LOWER` item.
 
 | Response field | Meaning |
 | --- | --- |
-| `source` | `ENGINE` when Irisphera built the [outfits](#outfits) from the product images, `RULES` when it used the [rules](#rules) |
-| `outfits[]` | The outfits, best first. Empty when no product goes well enough with the garment. |
+| `source` | Always `ENGINE`: Irisphera built the [outfits](#outfits) from the product images and features. There is no rule-based fallback. |
+| `outfits[]` | The outfits, best first. Empty when Irisphera cannot build an outfit around the garment. |
 | `outfits[].rank` | The outfit's position: `1` for the best outfit, then `2`, `3` and so on |
 | `outfits[].score` | How well the whole outfit goes together, from 0 to 1, with three decimals. Higher is better. |
-| `outfits[].items[]` | The products that complete the outfit, without the garment itself, in placement order: `UPPER`, `LOWER`, `FULL`, `FEET`, `HEAD`, `ACCESSORY`, `JEWELRY`. An outfit can hold two `UPPER` products, such as a top and a jacket. |
+| `outfits[].items[]` | The products that complete the outfit, without the garment itself, in placement order: `UPPER`, `LOWER`, `FULL`, `FEET`, `ACCESSORY`. An outfit can hold two `UPPER` products, such as a top and a jacket. |
 
 Each product in `items[]` has these fields:
 
@@ -118,14 +118,14 @@ The images come with temporary URLs unless you send `generatePresignedUrl=false`
 | Answer | Meaning | Action |
 | --- | --- | --- |
 | `200` with outfits | Outfits built around the garment | Show them |
-| `200` with `"outfits": []` | No product goes well enough with the garment, or Irisphera has not detected the garment's placement yet | Hide the mix-and-match block |
+| `200` with `"outfits": []` | Irisphera cannot build an outfit around the garment: the garment cannot anchor an outfit, its images are not analyzed yet, or the catalog holds too few matching products | Hide the mix-and-match block |
 | `404` | Unknown SKU, or not in this organization's catalog | Check the SKU against step 3 |
 
 ## How Irisphera chooses the products
 
 Irisphera compares the products' images and the features that it detected when it imported each product in [step 3](03-ingest-products.md). The shopper is not part of the comparison, so every shopper gets the same answer for the same SKU until the catalog changes.
 
-Irisphera first tries to build ranked outfits around the garment. When it cannot, it uses rules that build one outfit with one product for each placement.
+When Irisphera cannot build an outfit, the answer has no outfits. It never falls back to a simpler suggestion.
 
 ### Outfits
 
@@ -134,37 +134,27 @@ Irisphera builds outfits when the garment is a top, a bottom, a one-piece item s
 - It builds up to 5 outfits around the garment. Each outfit holds a top and a bottom, or a one-piece item. It can add shoes, outerwear, a bag and an accessory. Outfits hold only products of the garment's gender. A `UNISEX` garment gets `UNISEX` products only, and the outfits of a `WOMEN` or `MEN` garment hold no `UNISEX` product.
 - It needs at least five products of the garment's gender for each part that an outfit must have, such as five bottoms for a top. It adds an optional part, such as shoes, only when the catalog holds at least five products for it.
 - A learned model compares the product images of each pair of products. Rules for color, style, occasion, pattern, fabric and season complete the outfit's `score`.
+- An outfit never mixes a product for sport, such as workout leggings or running shoes, with a product for a dressy occasion: formal, evening, wedding, beach wedding, cocktail party, black-tie event, winter formal event, formal business, corporate business meeting, job interview or graduation.
 - Irisphera prefers variety. An outfit that repeats products of a better outfit moves down, so an outfit can have a higher `score` than the outfit above it. A product can still appear in more than one outfit.
 - `matchScore` is the learned model's probability that the product goes with the garment. When the model does not compare the two kinds of product, such as shoes and a bag, it is the mean of the rule scores for color, style, occasion, pattern, fabric and season.
 
-### Rules
+### Which products join an outfit
 
-Irisphera uses rules when the garment is any other product, such as a bag or a belt. It also uses them when it cannot build an outfit, for example because it has not analyzed the product images yet or because the catalog holds too few products of the garment's gender. The rules build one outfit with at most one product for each placement that the garment does not fill, and `source` is `RULES`. The outfit's `score` is the mean `matchScore` of its products.
+The product's detected `category` decides the part it can fill:
 
-The garment's placement decides which placements the answer can hold:
-
-| The garment | The answer can hold |
+| Category | Part of the outfit |
 | --- | --- |
-| `UPPER`, such as a blazer | `LOWER`, `FEET`, `HEAD`, `ACCESSORY`, `JEWELRY` |
-| `LOWER`, such as trousers | `UPPER`, `FEET`, `HEAD`, `ACCESSORY`, `JEWELRY` |
-| `FULL`, such as a dress | `FEET`, `HEAD`, `ACCESSORY`, `JEWELRY` |
-| `FEET`, `HEAD`, `ACCESSORY` or `JEWELRY` | `UPPER`, `LOWER` and the other placements in this row. `FULL` only when no `UPPER` or `LOWER` product qualifies. |
+| `tops`, `shirt` | Top |
+| `pants`, `jeans`, `trousers`, `shorts`, `skirt`, `joggers` | Bottom |
+| `dress`, `jumpsuit`, `romper` | One-piece item |
+| `jacket` | Outerwear |
+| `shoes` | Shoes |
+| `accessories` | A bag or an accessory, such as a belt, scarf or sunglasses, depending on its detected type |
+| `flowing` | A kimono joins as outerwear and a kaftan as a one-piece item; other flowing garments do not join |
+| `hosiery`, `sleepwear`, `underwear`, `unclassified` | Never |
+| `suit`, `set`, `swimwear`, `headwear`, `earrings`, `necklaces`, `bracelets`, `rings`, `watches` | Not yet |
 
-A product qualifies when all of these are true:
-
-- It is in one of the organization's collections, and it is not the garment itself.
-- Its gender is the garment's gender. `UNISEX` goes only with `UNISEX`, and `CHILDREN_GIRL` and `CHILDREN_BOY` go only with the same gender.
-- Swimwear and underwear go only with garments of the same category: a bikini top gets a bikini bottom, never jeans. They can still get shoes, bags and jewelry.
-- Its match score is at least 0.4.
-
-The match score combines four features, from the most to the least important. It is not a probability.
-
-1. **Occasion.** Products for the same occasion score highest. Related occasions, such as a wedding and a cocktail party, score less. Unrelated occasions score nothing.
-2. **Color palette.** The more color palettes the two products share, the higher the score.
-3. **Silhouette.** For a top and a bottom, balanced volumes score higher. A fitted top with wide trousers scores more than an oversized top with wide trousers.
-4. **Style.** Products that share a style score higher.
-
-A feature that Irisphera could not detect on one of the products counts as neutral. When two products have the same score, Irisphera always picks the same one.
+A product whose category Irisphera could not detect is `unclassified`. It stays in the catalog, but mix and match never uses it.
 
 ## Show the suggestions in your storefront
 
@@ -178,7 +168,7 @@ A feature that Irisphera could not detect on one of the products counts as neutr
 
 Nothing. Mix and match reads only the catalog. It works the same whatever the shopper chose in [step 4](04-shopper-session.md#record-the-shoppers-privacy-choices), and the report has no mix-and-match section.
 
-**Checkpoint:** an outfit in `mix-and-match.json` holds the product that you imported in this step, with a placement that the garment does not fill. Continue to [step 8](08-collect-events.md).
+**Checkpoint:** `mix-and-match.json` has `source` `ENGINE`. With the walkthrough's small catalog, `outfits` is empty; in a store with enough products of the garment's gender, an outfit holds products for placements that the garment does not fill. Continue to [step 8](08-collect-events.md).
 
 ## Frequently asked questions
 
@@ -188,4 +178,4 @@ Yes. Every shopper gets the same answer for the same SKU until the catalog chang
 
 ### Can we leave out products, such as ones that are out of stock?
 
-Not in the request. Irisphera has no stock information and suggests any product in the catalog. Filter the answer in your storefront before you show it. When you hide a product, hide the outfits that hold it and show the next outfits instead. The rules return only one outfit.
+Not in the request. Irisphera has no stock information and suggests any product in the catalog. Filter the answer in your storefront before you show it. When you hide a product, hide the outfits that hold it and show the next outfits instead.
