@@ -100,7 +100,7 @@ jq '{source, outfits: [.outfits[] | {rank, score, items: [.items[] | {placement,
 | `source` | Always `ENGINE`: Irisphera built the [outfits](#outfits) from the product images and features. There is no rule-based fallback. |
 | `outfits[]` | The outfits, best first. Empty when Irisphera cannot build an outfit around the garment. |
 | `outfits[].rank` | The outfit's position: `1` for the best outfit, then `2`, `3` and so on |
-| `outfits[].score` | How well the whole outfit goes together, from 0 to 1, with three decimals. Higher is better. |
+| `outfits[].score` | How well the whole outfit goes together, from 0 to 1, with three decimals. Higher is better. It does not set the order: see [outfits](#outfits). |
 | `outfits[].items[]` | The products that complete the outfit, without the garment itself, in placement order: `UPPER`, `LOWER`, `FULL`, `FEET`, `ACCESSORY`. An outfit can hold two `UPPER` products, such as a top and a jacket. |
 
 Each product in `items[]` has these fields:
@@ -135,7 +135,9 @@ Irisphera builds outfits when the garment is a top, a bottom, a one-piece item s
 - It needs at least five products of the garment's gender for each part that an outfit must have, such as five bottoms for a top. It adds an optional part, such as shoes, only when the catalog holds at least five products for it.
 - A learned model compares the product images of each pair of products. Rules for color, style, occasion, pattern, fabric and season complete the outfit's `score`.
 - An outfit never mixes a product for sport, such as workout leggings or running shoes, with a product for a dressy occasion: formal, evening, wedding, beach wedding, cocktail party, black-tie event, winter formal event, formal business, corporate business meeting, job interview or graduation.
-- Irisphera prefers variety. An outfit that repeats products of a better outfit moves down, so an outfit can have a higher `score` than the outfit above it. A product can still appear in more than one outfit.
+- Styling rules keep each outfit coherent. Joggers, leggings and tracksuits never go with an elegant, formal or evening product, nor with dress shoes, boots, sandals, flats or slippers. Sandals and other summer shoes never go with winter clothing, and boots never go with summer clothing such as shorts. A suit never goes with boots, sandals or slippers. Eveningwear never goes with sportswear, sneakers or slippers.
+- A second learned model, the outfit ranker, judges each whole outfit and sets the order of the outfits. It learned from human reviews of outfits. It does not change `score`, so an outfit can have a higher `score` than the outfit above it.
+- Irisphera prefers variety. An outfit that repeats products of a better outfit moves down. A product can still appear in more than one outfit.
 - `matchScore` is the learned model's probability that the product goes with the garment. When the model does not compare the two kinds of product, such as shoes and a bag, it is the mean of the rule scores for color, style, occasion, pattern, fabric and season.
 
 ### Which products join an outfit
